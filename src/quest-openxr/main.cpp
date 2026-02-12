@@ -58,10 +58,10 @@ constexpr double kPresetSwitchSeconds = 20.0;
 constexpr double kPresetScanIntervalSeconds = 10.0;
 constexpr double kAudioFallbackDelaySeconds = 3.0;
 constexpr size_t kMaxQueuedAudioFrames = 48000 * 2;
-constexpr float kHudDistance = 1.30f;
-constexpr float kHudVerticalOffset = -0.30f;
-constexpr float kHudWidth = 0.58f;
-constexpr float kHudHeight = 0.28f;
+constexpr float kHudDistance = 1.18f;
+constexpr float kHudVerticalOffset = -0.27f;
+constexpr float kHudWidth = 0.68f;
+constexpr float kHudHeight = 0.34f;
 constexpr double kHudVisibleOnStartSeconds = 8.0;
 constexpr double kHudVisibleAfterInteractionSeconds = 6.0;
 constexpr double kHudVisibleAfterStatusChangeSeconds = 3.0;
@@ -72,6 +72,11 @@ constexpr int kHudTextTextureWidth = 1024;
 constexpr int kHudTextTextureHeight = 512;
 constexpr int kHudGlyphWidth = 5;
 constexpr int kHudGlyphHeight = 7;
+constexpr int kHudStatusScale = 2;
+constexpr int kHudDetailScale = 2;
+constexpr int kHudActionScale = 4;
+constexpr int kHudInputScale = 3;
+constexpr int kHudTriggerScale = 3;
 
 constexpr char kFallbackPreset[] =
     "[preset00]\n"
@@ -575,6 +580,31 @@ int MeasureHudTextWidth(const std::string& text, int scale) {
     }
     const int advance = (kHudGlyphWidth + 1) * scale;
     return static_cast<int>(text.size()) * advance - scale;
+}
+
+std::string FitHudTextToWidth(const std::string& text, int scale, int maxPixelWidth) {
+    if (text.empty() || scale <= 0 || maxPixelWidth <= 0) {
+        return std::string();
+    }
+    if (MeasureHudTextWidth(text, scale) <= maxPixelWidth) {
+        return text;
+    }
+
+    const std::string ellipsis = "...";
+    const int ellipsisWidth = MeasureHudTextWidth(ellipsis, scale);
+    if (ellipsisWidth > maxPixelWidth) {
+        return std::string();
+    }
+
+    std::string trimmed = text;
+    while (!trimmed.empty() && MeasureHudTextWidth(trimmed, scale) + ellipsisWidth > maxPixelWidth) {
+        trimmed.pop_back();
+    }
+
+    if (trimmed.empty()) {
+        return ellipsis;
+    }
+    return trimmed + ellipsis;
 }
 
 void DrawHudText(std::vector<uint8_t>& texture, int xTopLeft, int yTopLeft, int scale, const std::string& text, uint8_t alpha) {
@@ -1324,8 +1354,8 @@ private:
                 color = blendRect(color, vUv, vec2(0.73, 0.88), vec2(0.89, 0.93), playColor, 1.0);
 
                 float textMask = texture(uTextTexture, vUv).r;
-                color = mix(color, vec3(0.95), clamp(textMask * 1.25, 0.0, 1.0));
-                alpha = max(alpha, textMask * 0.95);
+                color = mix(color, vec3(0.97), clamp(textMask * 1.45, 0.0, 1.0));
+                alpha = max(alpha, textMask);
 
                 fragColor = vec4(color, alpha);
             }
@@ -1711,12 +1741,20 @@ private:
         const int rectTop = static_cast<int>((1.0f - maxV) * static_cast<float>(kHudTextTextureHeight));
         const int rectBottom = static_cast<int>((1.0f - minV) * static_cast<float>(kHudTextTextureHeight));
 
-        const int textWidth = MeasureHudTextWidth(text, scale);
+        const int rectWidth = std::max(0, rectMaxX - rectMinX);
+        const int horizontalPadding = std::max(2, scale);
+        const int usableWidth = std::max(0, rectWidth - horizontalPadding * 2);
+        const std::string fittedText = FitHudTextToWidth(text, scale, usableWidth);
+        if (fittedText.empty()) {
+            return;
+        }
+
+        const int textWidth = MeasureHudTextWidth(fittedText, scale);
         const int textHeight = kHudGlyphHeight * scale;
 
-        const int x = rectMinX + std::max(0, (rectMaxX - rectMinX - textWidth) / 2);
+        const int x = rectMinX + horizontalPadding + std::max(0, (usableWidth - textWidth) / 2);
         const int y = rectTop + std::max(0, (rectBottom - rectTop - textHeight) / 2);
-        DrawHudText(hudTextPixels_, x, y, scale, text, alpha);
+        DrawHudText(hudTextPixels_, x, y, scale, fittedText, alpha);
     }
 
     void RefreshHudTextTextureIfNeeded(double nowSeconds) {
@@ -1731,9 +1769,9 @@ private:
         const std::string presetLabel = SanitizeHudText(currentPresetLabel_, 56);
         const std::string trackLabel = BuildTrackDisplayLabel(currentMediaLabel_);
         const bool inputFeedbackActive = nowSeconds <= hudInputFeedbackUntilSeconds_;
-        const std::string inputFeedbackLabel = inputFeedbackActive
-            ? SanitizeHudText(hudInputFeedbackLabel_, 40)
-            : "READY";
+        const std::string centerInfoLabel = inputFeedbackActive
+            ? "INPUT: " + SanitizeHudText(hudInputFeedbackLabel_, 34)
+            : "TRACK: " + trackLabel;
 
         const bool changed =
             hudTextDirty_ ||
@@ -1742,7 +1780,7 @@ private:
             hudRenderedPlaybackLabel_ != playbackLabel ||
             hudRenderedPresetLabel_ != presetLabel ||
             hudRenderedTrackLabel_ != trackLabel ||
-            hudRenderedInputFeedbackLabel_ != inputFeedbackLabel;
+            hudRenderedInputFeedbackLabel_ != centerInfoLabel;
 
         if (!changed) {
             return;
@@ -1753,30 +1791,29 @@ private:
         hudRenderedPlaybackLabel_ = playbackLabel;
         hudRenderedPresetLabel_ = presetLabel;
         hudRenderedTrackLabel_ = trackLabel;
-        hudRenderedInputFeedbackLabel_ = inputFeedbackLabel;
+        hudRenderedInputFeedbackLabel_ = centerInfoLabel;
         hudTextDirty_ = false;
 
         std::fill(hudTextPixels_.begin(), hudTextPixels_.end(), 0);
-        DrawHudText(hudTextPixels_, 34, 14, 2, "AUDIO: " + hudRenderedAudioLabel_, 255);
-        DrawHudText(hudTextPixels_, 360, 14, 2, "PROJ: " + hudRenderedProjectionLabel_, 255);
-        DrawHudText(hudTextPixels_, 660, 14, 2, "PLAY: " + hudRenderedPlaybackLabel_, 255);
-        DrawHudText(hudTextPixels_, 34, 48, 2, "PRESET: " + hudRenderedPresetLabel_, 255);
-        DrawHudText(hudTextPixels_, 34, 78, 2, "TRACK: " + hudRenderedTrackLabel_, 255);
+        DrawHudTextCentered(0.05f, 0.34f, 0.92f, 0.965f, "AUD " + hudRenderedAudioLabel_, kHudStatusScale);
+        DrawHudTextCentered(0.36f, 0.64f, 0.92f, 0.965f, "PROJ " + hudRenderedProjectionLabel_, kHudStatusScale);
+        DrawHudTextCentered(0.66f, 0.95f, 0.92f, 0.965f, "PLAY " + hudRenderedPlaybackLabel_, kHudStatusScale);
+        DrawHudTextCentered(0.05f, 0.95f, 0.86f, 0.91f, "PRESET " + hudRenderedPresetLabel_, kHudDetailScale);
 
-        DrawHudTextCentered(0.07f, 0.46f, 0.59f, 0.84f, "X PREV PRESET", 3);
-        DrawHudTextCentered(0.54f, 0.93f, 0.59f, 0.84f, "A NEXT PRESET", 3);
-        DrawHudTextCentered(0.07f, 0.46f, 0.30f, 0.55f, "Y PLAY PAUSE", 3);
-        DrawHudTextCentered(0.54f, 0.93f, 0.30f, 0.55f, "B NEXT TRACK", 3);
+        DrawHudTextCentered(0.07f, 0.46f, 0.59f, 0.84f, "X PREV PRESET", kHudActionScale);
+        DrawHudTextCentered(0.54f, 0.93f, 0.59f, 0.84f, "A NEXT PRESET", kHudActionScale);
+        DrawHudTextCentered(0.07f, 0.46f, 0.30f, 0.55f, "Y PLAY PAUSE", kHudActionScale);
+        DrawHudTextCentered(0.54f, 0.93f, 0.30f, 0.55f, "B NEXT TRACK", kHudActionScale);
         DrawHudTextCentered(0.07f,
                             0.93f,
-                            0.55f,
-                            0.59f,
-                            "INPUT: " + hudRenderedInputFeedbackLabel_,
-                            2,
+                            0.54f,
+                            0.60f,
+                            hudRenderedInputFeedbackLabel_,
+                            kHudInputScale,
                             inputFeedbackActive ? 255 : 170);
-        DrawHudTextCentered(0.07f, 0.33f, 0.08f, 0.24f, "LT GET PACK", 2);
-        DrawHudTextCentered(0.37f, 0.63f, 0.08f, 0.24f, "L3 PREV", 2);
-        DrawHudTextCentered(0.67f, 0.93f, 0.08f, 0.24f, "RT TOGGLE", 2);
+        DrawHudTextCentered(0.07f, 0.33f, 0.08f, 0.24f, "LT GET PACK", kHudTriggerScale);
+        DrawHudTextCentered(0.37f, 0.63f, 0.08f, 0.24f, "L3 PREV", kHudTriggerScale);
+        DrawHudTextCentered(0.67f, 0.93f, 0.08f, 0.24f, "RT TOGGLE", kHudTriggerScale);
 
         glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
