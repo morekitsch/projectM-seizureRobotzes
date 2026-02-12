@@ -68,6 +68,13 @@ constexpr double kHudVisibleAfterStatusChangeSeconds = 3.0;
 constexpr double kHudInputFeedbackSeconds = 1.4;
 constexpr float kTriggerPressThreshold = 0.75f;
 constexpr float kHudFlashPeak = 1.35f;
+constexpr double kRuntimePropertyPollIntervalSeconds = 1.0;
+constexpr double kPerfGraceAfterPresetSwitchSeconds = 4.0;
+constexpr float kDefaultPerfAutoSkipMinFps = 42.0f;
+constexpr double kDefaultPerfAutoSkipHoldSeconds = 2.0;
+constexpr double kDefaultPerfAutoSkipCooldownSeconds = 8.0;
+constexpr int kDefaultMeshWidth = 64;
+constexpr int kDefaultMeshHeight = 48;
 constexpr int kHudTextTextureWidth = 1024;
 constexpr int kHudTextTextureHeight = 512;
 constexpr int kHudGlyphWidth = 5;
@@ -436,6 +443,88 @@ std::string SanitizeHudText(const std::string& raw, size_t maxChars) {
     }
 
     return normalized;
+}
+
+std::string TrimAscii(const std::string& text) {
+    size_t start = 0;
+    while (start < text.size() && std::isspace(static_cast<unsigned char>(text[start])) != 0) {
+        ++start;
+    }
+    size_t end = text.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) {
+        --end;
+    }
+    return text.substr(start, end - start);
+}
+
+bool ReadSystemProperty(const char* key, std::string& valueOut) {
+    if (key == nullptr || *key == '\0') {
+        return false;
+    }
+
+    char buffer[PROP_VALUE_MAX] = {};
+    const int len = __system_property_get(key, buffer);
+    if (len <= 0) {
+        return false;
+    }
+
+    valueOut.assign(buffer, static_cast<size_t>(len));
+    return true;
+}
+
+bool ParseBoolText(const std::string& text, bool& valueOut) {
+    std::string normalized = TrimAscii(text);
+    std::transform(normalized.begin(),
+                   normalized.end(),
+                   normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    if (normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on") {
+        valueOut = true;
+        return true;
+    }
+    if (normalized == "0" || normalized == "false" || normalized == "no" || normalized == "off") {
+        valueOut = false;
+        return true;
+    }
+
+    return false;
+}
+
+bool ParseFloatText(const std::string& text, float& valueOut) {
+    const std::string trimmed = TrimAscii(text);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    errno = 0;
+    char* end = nullptr;
+    const float parsed = std::strtof(trimmed.c_str(), &end);
+    if (end == trimmed.c_str() || errno == ERANGE) {
+        return false;
+    }
+    while (end != nullptr && *end != '\0') {
+        if (std::isspace(static_cast<unsigned char>(*end)) == 0) {
+            return false;
+        }
+        ++end;
+    }
+
+    valueOut = parsed;
+    return true;
+}
+
+bool ParseIntPairText(const std::string& text, int& firstOut, int& secondOut) {
+    int first = 0;
+    int second = 0;
+    if (std::sscanf(text.c_str(), "%d x %d", &first, &second) == 2 ||
+        std::sscanf(text.c_str(), "%dX%d", &first, &second) == 2 ||
+        std::sscanf(text.c_str(), "%d,%d", &first, &second) == 2) {
+        firstOut = first;
+        secondOut = second;
+        return true;
+    }
+    return false;
 }
 
 using GlyphRows = std::array<uint8_t, kHudGlyphHeight>;
@@ -1509,7 +1598,9 @@ private:
         }
 
         projectm_set_window_size(projectM_, kProjectMWidth, kProjectMHeight);
-        projectm_set_mesh_size(projectM_, 64, 48);
+        meshWidth_ = kDefaultMeshWidth;
+        meshHeight_ = kDefaultMeshHeight;
+        projectm_set_mesh_size(projectM_, meshWidth_, meshHeight_);
         projectm_set_fps(projectM_, 72);
         projectm_set_hard_cut_enabled(projectM_, true);
         projectm_set_hard_cut_duration(projectM_, 15.0);
@@ -1519,18 +1610,30 @@ private:
         const std::string presetOutputDir = appDataPath + "/presets";
         const std::string textureOutputDir = appDataPath + "/textures";
         presetDirectory_ = presetOutputDir;
+        slowPresetFilePath_ = appDataPath.empty() ? std::string() : (appDataPath + "/slow_presets.txt");
 
         if (app_->activity->assetManager != nullptr) {
             CopyAssetDirectoryFlat(app_->activity->assetManager, "presets", presetOutputDir);
             CopyAssetDirectoryFlat(app_->activity->assetManager, "textures", textureOutputDir);
         }
 
+        LoadSlowPresetList();
         presetFiles_ = CollectPresetFiles(presetOutputDir);
         if (!presetFiles_.empty()) {
-            projectm_load_preset_file(projectM_, presetFiles_.front().c_str(), false);
-            LOGI("Loaded first preset from assets: %s", presetFiles_.front().c_str());
+            currentPresetIndex_ = 0;
+            if (skipMarkedPresets_) {
+                for (size_t i = 0; i < presetFiles_.size(); ++i) {
+                    if (!IsPresetMarkedSlow(presetFiles_[i])) {
+                        currentPresetIndex_ = i;
+                        break;
+                    }
+                }
+            }
+
+            projectm_load_preset_file(projectM_, presetFiles_[currentPresetIndex_].c_str(), false);
+            LOGI("Loaded first preset from assets: %s", presetFiles_[currentPresetIndex_].c_str());
             usingFallbackPreset_ = false;
-            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_.front());
+            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
         } else {
             projectm_load_preset_data(projectM_, kFallbackPreset, false);
             LOGW("No preset assets found, using built-in fallback preset.");
@@ -1572,6 +1675,117 @@ private:
         }
 
         return true;
+    }
+
+    bool IsPresetMarkedSlow(const std::string& presetPath) const {
+        if (presetPath.empty()) {
+            return false;
+        }
+
+        const std::string basename = BasenamePath(presetPath);
+        for (const std::string& entry : slowPresets_) {
+            if (entry == presetPath || entry == basename) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool FindPresetIndexRelative(int delta, bool skipMarked, size_t& outIndex) const {
+        if (presetFiles_.empty()) {
+            return false;
+        }
+
+        if (delta == 0) {
+            outIndex = currentPresetIndex_;
+            return true;
+        }
+
+        const int step = delta > 0 ? 1 : -1;
+        const int64_t count = static_cast<int64_t>(presetFiles_.size());
+        int64_t index = static_cast<int64_t>(currentPresetIndex_);
+
+        for (int64_t attempt = 0; attempt < count; ++attempt) {
+            index += step;
+            index %= count;
+            if (index < 0) {
+                index += count;
+            }
+
+            const size_t candidate = static_cast<size_t>(index);
+            if (skipMarked && IsPresetMarkedSlow(presetFiles_[candidate])) {
+                continue;
+            }
+
+            outIndex = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    void PersistSlowPresetList() const {
+        if (slowPresetFilePath_.empty()) {
+            return;
+        }
+
+        std::ofstream out(slowPresetFilePath_, std::ios::trunc);
+        if (!out) {
+            LOGW("Could not write slow preset list: %s", slowPresetFilePath_.c_str());
+            return;
+        }
+
+        for (const std::string& path : slowPresets_) {
+            out << path << '\n';
+        }
+    }
+
+    void LoadSlowPresetList() {
+        slowPresets_.clear();
+        if (slowPresetFilePath_.empty()) {
+            return;
+        }
+
+        std::ifstream in(slowPresetFilePath_);
+        if (!in) {
+            return;
+        }
+
+        std::string line;
+        while (std::getline(in, line)) {
+            line = TrimAscii(line);
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+            if (std::find(slowPresets_.begin(), slowPresets_.end(), line) == slowPresets_.end()) {
+                slowPresets_.push_back(line);
+            }
+        }
+
+        if (!slowPresets_.empty()) {
+            LOGI("Loaded %zu marked slow presets.", slowPresets_.size());
+        }
+    }
+
+    void ClearSlowPresetMarks() {
+        slowPresets_.clear();
+        PersistSlowPresetList();
+        LOGI("Cleared marked slow presets.");
+    }
+
+    void MarkCurrentPresetSlow() {
+        if (presetFiles_.empty() || currentPresetIndex_ >= presetFiles_.size()) {
+            return;
+        }
+
+        const std::string& presetPath = presetFiles_[currentPresetIndex_];
+        if (IsPresetMarkedSlow(presetPath)) {
+            return;
+        }
+
+        slowPresets_.push_back(presetPath);
+        PersistSlowPresetList();
+        LOGW("Marked preset as slow: %s", presetPath.c_str());
     }
 
     void AddSyntheticAudioForFrame() {
@@ -1649,11 +1863,20 @@ private:
             currentPresetIndex_ = 0;
         }
 
+        if (skipMarkedPresets_ &&
+            !presetFiles_.empty() &&
+            currentPresetIndex_ < presetFiles_.size() &&
+            IsPresetMarkedSlow(presetFiles_[currentPresetIndex_])) {
+            size_t nextUnmarked = currentPresetIndex_;
+            if (FindPresetIndexRelative(1, true, nextUnmarked)) {
+                currentPresetIndex_ = nextUnmarked;
+            }
+        }
+
         if (usingFallbackPreset_) {
-            projectm_load_preset_file(projectM_, presetFiles_.front().c_str(), false);
+            projectm_load_preset_file(projectM_, presetFiles_[currentPresetIndex_].c_str(), false);
             usingFallbackPreset_ = false;
-            currentPresetIndex_ = 0;
-            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_.front());
+            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
             hudTextDirty_ = true;
         }
 
@@ -1673,14 +1896,15 @@ private:
             return;
         }
 
-        const int64_t count = static_cast<int64_t>(presetFiles_.size());
-        int64_t next = static_cast<int64_t>(currentPresetIndex_) + delta;
-        next %= count;
-        if (next < 0) {
-            next += count;
+        size_t nextIndex = currentPresetIndex_;
+        const bool preferUnmarked = skipMarkedPresets_;
+        if (!FindPresetIndexRelative(delta, preferUnmarked, nextIndex)) {
+            if (!FindPresetIndexRelative(delta, false, nextIndex)) {
+                return;
+            }
         }
 
-        currentPresetIndex_ = static_cast<size_t>(next);
+        currentPresetIndex_ = nextIndex;
         projectm_load_preset_file(projectM_, presetFiles_[currentPresetIndex_].c_str(), smooth);
         lastPresetSwitchSeconds_ = ElapsedSeconds();
         currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
@@ -1868,10 +2092,186 @@ private:
         hudVisibleUntilSeconds_ = std::max(hudVisibleUntilSeconds_, nowSeconds + durationSeconds);
     }
 
+    void PollRuntimeDebugProperties(double nowSeconds) {
+        if (nowSeconds - lastRuntimePropertyPollSeconds_ < kRuntimePropertyPollIntervalSeconds) {
+            return;
+        }
+        lastRuntimePropertyPollSeconds_ = nowSeconds;
+
+        auto readBoolProperty = [](const char* key, bool defaultValue) {
+            std::string text;
+            bool parsed = defaultValue;
+            if (ReadSystemProperty(key, text)) {
+                bool propValue = defaultValue;
+                if (ParseBoolText(text, propValue)) {
+                    parsed = propValue;
+                }
+            }
+            return parsed;
+        };
+
+        auto readFloatProperty = [](const char* key, float defaultValue) {
+            std::string text;
+            float parsed = defaultValue;
+            if (ReadSystemProperty(key, text)) {
+                float propValue = defaultValue;
+                if (ParseFloatText(text, propValue)) {
+                    parsed = propValue;
+                }
+            }
+            return parsed;
+        };
+
+        const bool hudEnabled = readBoolProperty("debug.projectm.quest.hud.enabled", true);
+        const float hudDistance = std::clamp(readFloatProperty("debug.projectm.quest.hud.distance", kHudDistance), 0.40f, 3.0f);
+        const float hudVerticalOffset = std::clamp(readFloatProperty("debug.projectm.quest.hud.v_offset", kHudVerticalOffset), -1.2f, 1.2f);
+        const float hudScale = std::clamp(readFloatProperty("debug.projectm.quest.hud.scale", 1.0f), 0.50f, 2.0f);
+
+        const bool perfAutoSkip = readBoolProperty("debug.projectm.quest.perf.auto_skip", true);
+        const bool skipMarked = readBoolProperty("debug.projectm.quest.perf.skip_marked", true);
+        const float perfMinFps = std::clamp(readFloatProperty("debug.projectm.quest.perf.min_fps", kDefaultPerfAutoSkipMinFps), 15.0f, 90.0f);
+        const float perfHold = std::clamp(readFloatProperty("debug.projectm.quest.perf.bad_seconds",
+                                                            static_cast<float>(kDefaultPerfAutoSkipHoldSeconds)),
+                                          0.3f,
+                                          10.0f);
+        const float perfCooldown = std::clamp(readFloatProperty("debug.projectm.quest.perf.cooldown_seconds",
+                                                                static_cast<float>(kDefaultPerfAutoSkipCooldownSeconds)),
+                                              1.0f,
+                                              60.0f);
+
+        const float newHudWidth = kHudWidth * hudScale;
+        const float newHudHeight = kHudHeight * hudScale;
+
+        bool hudChanged = false;
+        if (hudEnabled_ != hudEnabled) {
+            hudEnabled_ = hudEnabled;
+            hudChanged = true;
+        }
+        if (std::fabs(hudDistance_ - hudDistance) > 0.0005f) {
+            hudDistance_ = hudDistance;
+            hudChanged = true;
+        }
+        if (std::fabs(hudVerticalOffset_ - hudVerticalOffset) > 0.0005f) {
+            hudVerticalOffset_ = hudVerticalOffset;
+            hudChanged = true;
+        }
+        if (std::fabs(hudWidth_ - newHudWidth) > 0.0005f) {
+            hudWidth_ = newHudWidth;
+            hudChanged = true;
+        }
+        if (std::fabs(hudHeight_ - newHudHeight) > 0.0005f) {
+            hudHeight_ = newHudHeight;
+            hudChanged = true;
+        }
+
+        if (hudChanged) {
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+            LOGI("HUD tuning updated: enabled=%d distance=%.2f vOffset=%.2f scale=%.2f",
+                 hudEnabled_ ? 1 : 0,
+                 hudDistance_,
+                 hudVerticalOffset_,
+                 hudScale);
+        }
+
+        perfAutoSkipEnabled_ = perfAutoSkip;
+        skipMarkedPresets_ = skipMarked;
+        perfAutoSkipMinFps_ = perfMinFps;
+        perfAutoSkipHoldSeconds_ = static_cast<double>(perfHold);
+        perfAutoSkipCooldownSeconds_ = static_cast<double>(perfCooldown);
+
+        std::string meshText;
+        int parsedMeshWidth = kDefaultMeshWidth;
+        int parsedMeshHeight = kDefaultMeshHeight;
+        if (ReadSystemProperty("debug.projectm.quest.perf.mesh", meshText) &&
+            ParseIntPairText(meshText, parsedMeshWidth, parsedMeshHeight)) {
+            parsedMeshWidth = std::clamp(parsedMeshWidth, 16, 128);
+            parsedMeshHeight = std::clamp(parsedMeshHeight, 12, 128);
+        } else {
+            parsedMeshWidth = kDefaultMeshWidth;
+            parsedMeshHeight = kDefaultMeshHeight;
+        }
+
+        if ((meshWidth_ != parsedMeshWidth || meshHeight_ != parsedMeshHeight) && projectM_ != nullptr) {
+            meshWidth_ = parsedMeshWidth;
+            meshHeight_ = parsedMeshHeight;
+            projectm_set_mesh_size(projectM_, meshWidth_, meshHeight_);
+            LOGI("projectM mesh size set to %d x %d", meshWidth_, meshHeight_);
+            hudInputFeedbackLabel_ = "QUALITY MESH UPDATED";
+            hudInputFeedbackUntilSeconds_ = nowSeconds + kHudInputFeedbackSeconds;
+            hudTextDirty_ = true;
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+        }
+
+        const bool clearMarkedRequest = readBoolProperty("debug.projectm.quest.perf.clear_marked", false);
+        if (clearMarkedRequest && !clearMarkedLatch_) {
+            ClearSlowPresetMarks();
+            clearMarkedLatch_ = true;
+            hudInputFeedbackLabel_ = "CLEARED SLOW PRESET MARKS";
+            hudInputFeedbackUntilSeconds_ = nowSeconds + kHudInputFeedbackSeconds;
+            hudTextDirty_ = true;
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+        }
+        if (!clearMarkedRequest) {
+            clearMarkedLatch_ = false;
+        }
+    }
+
     void SetHudInputFeedback(double nowSeconds, const std::string& feedbackLabel) {
         hudInputFeedbackLabel_ = feedbackLabel;
         hudInputFeedbackUntilSeconds_ = nowSeconds + kHudInputFeedbackSeconds;
         hudTextDirty_ = true;
+    }
+
+    void UpdatePerformanceAutoSkip(double nowSeconds, float deltaSeconds) {
+        if (deltaSeconds <= 0.0f) {
+            return;
+        }
+
+        const double clampedDelta = std::clamp(static_cast<double>(deltaSeconds), 1.0 / 240.0, 0.5);
+        if (smoothedFrameSeconds_ <= 0.0) {
+            smoothedFrameSeconds_ = clampedDelta;
+        } else {
+            smoothedFrameSeconds_ = smoothedFrameSeconds_ * 0.92 + clampedDelta * 0.08;
+        }
+
+        if (!perfAutoSkipEnabled_ || presetFiles_.size() <= 1 || usingFallbackPreset_) {
+            lowFpsSinceSeconds_ = -1.0;
+            return;
+        }
+
+        if (nowSeconds - lastPresetSwitchSeconds_ < kPerfGraceAfterPresetSwitchSeconds ||
+            nowSeconds - lastAutoSkipSeconds_ < perfAutoSkipCooldownSeconds_) {
+            lowFpsSinceSeconds_ = -1.0;
+            return;
+        }
+
+        const double smoothedFps = 1.0 / std::max(smoothedFrameSeconds_, 1e-4);
+        if (smoothedFps >= static_cast<double>(perfAutoSkipMinFps_)) {
+            lowFpsSinceSeconds_ = -1.0;
+            return;
+        }
+
+        if (lowFpsSinceSeconds_ < 0.0) {
+            lowFpsSinceSeconds_ = nowSeconds;
+            return;
+        }
+
+        if (nowSeconds - lowFpsSinceSeconds_ < perfAutoSkipHoldSeconds_) {
+            return;
+        }
+
+        const std::string slowPresetLabel = currentPresetLabel_;
+        MarkCurrentPresetSlow();
+        lastAutoSkipSeconds_ = nowSeconds;
+        lowFpsSinceSeconds_ = -1.0;
+
+        SetHudInputFeedback(nowSeconds, "AUTO-SKIP SLOW PRESET");
+        ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
+        SwitchPresetRelative(+1, true);
+        LOGW("Auto-skipped slow preset %s (smoothed FPS %.1f < %.1f)",
+             slowPresetLabel.c_str(),
+             smoothedFps,
+             static_cast<double>(perfAutoSkipMinFps_));
     }
 
     void PollInputActions(double nowSeconds) {
@@ -1979,17 +2379,20 @@ private:
         if (hudProgram_ == 0 || hudVao_ == 0) {
             return;
         }
+        if (!hudEnabled_) {
+            return;
+        }
         if (nowSeconds > hudVisibleUntilSeconds_) {
             return;
         }
 
         const glm::vec3 basePosition(pose.position.x, pose.position.y, pose.position.z);
         const glm::quat baseOrientation(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
-        const glm::vec3 panelOffset = baseOrientation * glm::vec3(0.0f, kHudVerticalOffset, -kHudDistance);
+        const glm::vec3 panelOffset = baseOrientation * glm::vec3(0.0f, hudVerticalOffset_, -hudDistance_);
         const glm::vec3 panelPosition = basePosition + panelOffset;
 
         glm::mat4 model = glm::translate(glm::mat4(1.0f), panelPosition) * glm::mat4_cast(baseOrientation);
-        model = glm::scale(model, glm::vec3(kHudWidth, kHudHeight, 1.0f));
+        model = glm::scale(model, glm::vec3(hudWidth_, hudHeight_, 1.0f));
         const glm::mat4 mvp = projection * view * model;
 
         glEnable(GL_BLEND);
@@ -2037,11 +2440,7 @@ private:
         RefreshPresetListIfNeeded(nowSeconds);
 
         if (presetFiles_.size() > 1 && nowSeconds - lastPresetSwitchSeconds_ > kPresetSwitchSeconds) {
-            currentPresetIndex_ = (currentPresetIndex_ + 1) % presetFiles_.size();
-            projectm_load_preset_file(projectM_, presetFiles_[currentPresetIndex_].c_str(), true);
-            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
-            lastPresetSwitchSeconds_ = nowSeconds;
-            hudTextDirty_ = true;
+            SwitchPresetRelative(+1, true);
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, projectMFbo_);
@@ -2087,6 +2486,10 @@ private:
                     sessionRunning_ = true;
                     lastFrameSeconds_ = ElapsedSeconds();
                     lastPresetSwitchSeconds_ = lastFrameSeconds_;
+                    lowFpsSinceSeconds_ = -1.0;
+                    lastAutoSkipSeconds_ = -1000.0;
+                    smoothedFrameSeconds_ = 1.0 / 72.0;
+                    lastRuntimePropertyPollSeconds_ = -1000.0;
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
                     ExtendHudVisibility(lastFrameSeconds_, kHudVisibleOnStartSeconds);
@@ -2143,9 +2546,11 @@ private:
             const float deltaSeconds = static_cast<float>(nowSeconds - lastFrameSeconds_);
             lastFrameSeconds_ = nowSeconds;
 
+            PollRuntimeDebugProperties(nowSeconds);
             PollInputActions(nowSeconds);
             UpdateUiStateFromJava(nowSeconds);
             AdvanceHudFlash(std::max(deltaSeconds, 0.0f));
+            UpdatePerformanceAutoSkip(nowSeconds, std::max(deltaSeconds, 0.0f));
             RenderProjectMFrame(nowSeconds, deltaSeconds);
 
             XrViewLocateInfo locateInfo{XR_TYPE_VIEW_LOCATE_INFO};
@@ -2453,6 +2858,11 @@ private:
     std::string hudRenderedTrackLabel_;
     std::string hudInputFeedbackLabel_{"READY"};
     std::string hudRenderedInputFeedbackLabel_;
+    bool hudEnabled_{true};
+    float hudDistance_{kHudDistance};
+    float hudVerticalOffset_{kHudVerticalOffset};
+    float hudWidth_{kHudWidth};
+    float hudHeight_{kHudHeight};
 
     ProjectionMode projectionMode_{ProjectionMode::FullSphere};
     float hudFlashA_{0.0f};
@@ -2469,6 +2879,20 @@ private:
 
     float audioCarrierPhase_{0.0f};
     float audioBeatPhase_{0.0f};
+    int meshWidth_{kDefaultMeshWidth};
+    int meshHeight_{kDefaultMeshHeight};
+    bool perfAutoSkipEnabled_{true};
+    bool skipMarkedPresets_{true};
+    float perfAutoSkipMinFps_{kDefaultPerfAutoSkipMinFps};
+    double perfAutoSkipHoldSeconds_{kDefaultPerfAutoSkipHoldSeconds};
+    double perfAutoSkipCooldownSeconds_{kDefaultPerfAutoSkipCooldownSeconds};
+    double smoothedFrameSeconds_{1.0 / 72.0};
+    double lowFpsSinceSeconds_{-1.0};
+    double lastAutoSkipSeconds_{-1000.0};
+    double lastRuntimePropertyPollSeconds_{-1000.0};
+    bool clearMarkedLatch_{false};
+    std::vector<std::string> slowPresets_;
+    std::string slowPresetFilePath_;
 
     std::chrono::steady_clock::time_point startTime_{};
     double lastFrameSeconds_{0.0};

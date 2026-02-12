@@ -55,6 +55,37 @@ To revert to full sphere:
 adb shell setprop debug.projectm.quest.projection sphere
 ```
 
+## Runtime Tuning (No Rebuild)
+
+These properties are polled at runtime (about once per second):
+
+```bash
+# HUD placement/size
+adb shell setprop debug.projectm.quest.hud.enabled 1
+adb shell setprop debug.projectm.quest.hud.distance 1.18
+adb shell setprop debug.projectm.quest.hud.v_offset -0.27
+adb shell setprop debug.projectm.quest.hud.scale 1.0
+
+# Performance guard
+adb shell setprop debug.projectm.quest.perf.auto_skip 1
+adb shell setprop debug.projectm.quest.perf.min_fps 42
+adb shell setprop debug.projectm.quest.perf.bad_seconds 2.0
+adb shell setprop debug.projectm.quest.perf.cooldown_seconds 8.0
+adb shell setprop debug.projectm.quest.perf.skip_marked 1
+adb shell setprop debug.projectm.quest.perf.mesh 64x48
+```
+
+Notes:
+
+- Slow presets are auto-marked and persisted to internal app storage (`slow_presets.txt`) when FPS stays below threshold long enough.
+- Marked presets are skipped during next/prev and timed auto-advance when `debug.projectm.quest.perf.skip_marked=1`.
+- To clear all slow-preset marks:
+
+```bash
+adb shell setprop debug.projectm.quest.perf.clear_marked 1
+adb shell setprop debug.projectm.quest.perf.clear_marked 0
+```
+
 ## In-Headset UI + Controls
 
 The app renders a head-locked control HUD in VR with color tiles plus text labels so controls are self-labeled in-headset.
