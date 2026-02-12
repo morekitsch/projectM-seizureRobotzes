@@ -20,6 +20,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
@@ -57,10 +58,20 @@ constexpr double kPresetSwitchSeconds = 20.0;
 constexpr double kPresetScanIntervalSeconds = 10.0;
 constexpr double kAudioFallbackDelaySeconds = 3.0;
 constexpr size_t kMaxQueuedAudioFrames = 48000 * 2;
-constexpr float kHudDistance = 1.15f;
-constexpr float kHudVerticalOffset = -0.20f;
-constexpr float kHudWidth = 0.62f;
-constexpr float kHudHeight = 0.30f;
+constexpr float kHudDistance = 1.30f;
+constexpr float kHudVerticalOffset = -0.30f;
+constexpr float kHudWidth = 0.58f;
+constexpr float kHudHeight = 0.28f;
+constexpr double kHudVisibleOnStartSeconds = 8.0;
+constexpr double kHudVisibleAfterInteractionSeconds = 6.0;
+constexpr double kHudVisibleAfterStatusChangeSeconds = 3.0;
+constexpr double kHudInputFeedbackSeconds = 1.4;
+constexpr float kTriggerPressThreshold = 0.75f;
+constexpr float kHudFlashPeak = 1.35f;
+constexpr int kHudTextTextureWidth = 1024;
+constexpr int kHudTextTextureHeight = 512;
+constexpr int kHudGlyphWidth = 5;
+constexpr int kHudGlyphHeight = 7;
 
 constexpr char kFallbackPreset[] =
     "[preset00]\n"
@@ -106,6 +117,7 @@ enum class AudioMode : int {
 std::mutex g_uiMutex;
 AudioMode g_audioMode = AudioMode::Synthetic;
 bool g_mediaPlaying = false;
+std::string g_mediaLabel = "none";
 
 std::mutex g_audioMutex;
 std::deque<float> g_audioQueueInterleavedStereo;
@@ -340,6 +352,244 @@ glm::mat4 BuildViewMatrix(const XrPosef& pose) {
     return glm::inverse(world);
 }
 
+std::string BasenamePath(const std::string& path) {
+    if (path.empty()) {
+        return std::string();
+    }
+
+    const size_t slash = path.find_last_of("/\\");
+    if (slash == std::string::npos || slash + 1 >= path.size()) {
+        return path;
+    }
+    return path.substr(slash + 1);
+}
+
+std::string StripExtension(std::string value) {
+    const size_t dot = value.find_last_of('.');
+    if (dot != std::string::npos) {
+        value.erase(dot);
+    }
+    return value;
+}
+
+void ReplaceAll(std::string& value, const std::string& needle, const std::string& replacement) {
+    if (needle.empty()) {
+        return;
+    }
+
+    size_t start = 0;
+    while ((start = value.find(needle, start)) != std::string::npos) {
+        value.replace(start, needle.size(), replacement);
+        start += replacement.size();
+    }
+}
+
+std::string SanitizeHudText(const std::string& raw, size_t maxChars) {
+    std::string normalized;
+    normalized.reserve(raw.size());
+
+    bool lastWasSpace = false;
+    for (const unsigned char ch : raw) {
+        char out = static_cast<char>(ch);
+        if (out == '\n' || out == '\r' || out == '\t') {
+            out = ' ';
+        }
+        if (out < 32 || out > 126) {
+            out = '?';
+        }
+
+        if (out == ' ') {
+            if (lastWasSpace) {
+                continue;
+            }
+            lastWasSpace = true;
+        } else {
+            lastWasSpace = false;
+        }
+
+        normalized.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(out))));
+    }
+
+    while (!normalized.empty() && normalized.front() == ' ') {
+        normalized.erase(normalized.begin());
+    }
+    while (!normalized.empty() && normalized.back() == ' ') {
+        normalized.pop_back();
+    }
+
+    if (normalized.empty()) {
+        normalized = "NONE";
+    }
+
+    if (normalized.size() > maxChars) {
+        if (maxChars <= 3) {
+            normalized.resize(maxChars);
+        } else {
+            normalized.resize(maxChars - 3);
+            normalized += "...";
+        }
+    }
+
+    return normalized;
+}
+
+using GlyphRows = std::array<uint8_t, kHudGlyphHeight>;
+
+const GlyphRows& HudGlyphRows(char c) {
+    static const GlyphRows kSpace{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+    static const GlyphRows kUnknown{{0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04}};
+    static const GlyphRows kA{{0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}};
+    static const GlyphRows kB{{0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}};
+    static const GlyphRows kC{{0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}};
+    static const GlyphRows kD{{0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C}};
+    static const GlyphRows kE{{0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}};
+    static const GlyphRows kF{{0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}};
+    static const GlyphRows kG{{0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}};
+    static const GlyphRows kH{{0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}};
+    static const GlyphRows kI{{0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}};
+    static const GlyphRows kJ{{0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E}};
+    static const GlyphRows kK{{0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}};
+    static const GlyphRows kL{{0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}};
+    static const GlyphRows kM{{0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}};
+    static const GlyphRows kN{{0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}};
+    static const GlyphRows kO{{0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}};
+    static const GlyphRows kP{{0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}};
+    static const GlyphRows kQ{{0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}};
+    static const GlyphRows kR{{0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}};
+    static const GlyphRows kS{{0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}};
+    static const GlyphRows kT{{0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}};
+    static const GlyphRows kU{{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}};
+    static const GlyphRows kV{{0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04}};
+    static const GlyphRows kW{{0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A}};
+    static const GlyphRows kX{{0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11}};
+    static const GlyphRows kY{{0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}};
+    static const GlyphRows kZ{{0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}};
+    static const GlyphRows k0{{0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}};
+    static const GlyphRows k1{{0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}};
+    static const GlyphRows k2{{0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}};
+    static const GlyphRows k3{{0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E}};
+    static const GlyphRows k4{{0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}};
+    static const GlyphRows k5{{0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}};
+    static const GlyphRows k6{{0x07, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}};
+    static const GlyphRows k7{{0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}};
+    static const GlyphRows k8{{0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}};
+    static const GlyphRows k9{{0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x1C}};
+    static const GlyphRows kColon{{0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00}};
+    static const GlyphRows kDot{{0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x06}};
+    static const GlyphRows kDash{{0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}};
+    static const GlyphRows kUnderscore{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F}};
+    static const GlyphRows kSlash{{0x01, 0x02, 0x04, 0x08, 0x10, 0x00, 0x00}};
+    static const GlyphRows kOpenParen{{0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02}};
+    static const GlyphRows kCloseParen{{0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08}};
+    static const GlyphRows kHash{{0x0A, 0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x0A}};
+    static const GlyphRows kPlus{{0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}};
+    static const GlyphRows kEqual{{0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00, 0x00}};
+
+    switch (c) {
+        case 'A': return kA;
+        case 'B': return kB;
+        case 'C': return kC;
+        case 'D': return kD;
+        case 'E': return kE;
+        case 'F': return kF;
+        case 'G': return kG;
+        case 'H': return kH;
+        case 'I': return kI;
+        case 'J': return kJ;
+        case 'K': return kK;
+        case 'L': return kL;
+        case 'M': return kM;
+        case 'N': return kN;
+        case 'O': return kO;
+        case 'P': return kP;
+        case 'Q': return kQ;
+        case 'R': return kR;
+        case 'S': return kS;
+        case 'T': return kT;
+        case 'U': return kU;
+        case 'V': return kV;
+        case 'W': return kW;
+        case 'X': return kX;
+        case 'Y': return kY;
+        case 'Z': return kZ;
+        case '0': return k0;
+        case '1': return k1;
+        case '2': return k2;
+        case '3': return k3;
+        case '4': return k4;
+        case '5': return k5;
+        case '6': return k6;
+        case '7': return k7;
+        case '8': return k8;
+        case '9': return k9;
+        case ' ': return kSpace;
+        case ':': return kColon;
+        case '.': return kDot;
+        case '-': return kDash;
+        case '_': return kUnderscore;
+        case '/': return kSlash;
+        case '(': return kOpenParen;
+        case ')': return kCloseParen;
+        case '#': return kHash;
+        case '+': return kPlus;
+        case '=': return kEqual;
+        default: return kUnknown;
+    }
+}
+
+void SetHudPixel(std::vector<uint8_t>& texture, int x, int yTop, uint8_t alpha) {
+    if (x < 0 || x >= kHudTextTextureWidth || yTop < 0 || yTop >= kHudTextTextureHeight) {
+        return;
+    }
+
+    const int yBottom = (kHudTextTextureHeight - 1) - yTop;
+    const size_t index = static_cast<size_t>(yBottom * kHudTextTextureWidth + x);
+    texture[index] = std::max(texture[index], alpha);
+}
+
+void DrawHudGlyph(std::vector<uint8_t>& texture, int xTopLeft, int yTopLeft, int scale, char c, uint8_t alpha) {
+    if (scale <= 0) {
+        return;
+    }
+
+    const GlyphRows& rows = HudGlyphRows(c);
+    for (int row = 0; row < kHudGlyphHeight; ++row) {
+        for (int col = 0; col < kHudGlyphWidth; ++col) {
+            const int bit = kHudGlyphWidth - 1 - col;
+            if (((rows[static_cast<size_t>(row)] >> bit) & 0x01U) == 0U) {
+                continue;
+            }
+
+            for (int dy = 0; dy < scale; ++dy) {
+                for (int dx = 0; dx < scale; ++dx) {
+                    SetHudPixel(texture, xTopLeft + col * scale + dx, yTopLeft + row * scale + dy, alpha);
+                }
+            }
+        }
+    }
+}
+
+int MeasureHudTextWidth(const std::string& text, int scale) {
+    if (text.empty() || scale <= 0) {
+        return 0;
+    }
+    const int advance = (kHudGlyphWidth + 1) * scale;
+    return static_cast<int>(text.size()) * advance - scale;
+}
+
+void DrawHudText(std::vector<uint8_t>& texture, int xTopLeft, int yTopLeft, int scale, const std::string& text, uint8_t alpha) {
+    if (text.empty() || scale <= 0) {
+        return;
+    }
+
+    const int advance = (kHudGlyphWidth + 1) * scale;
+    int cursor = xTopLeft;
+    for (const char c : text) {
+        DrawHudGlyph(texture, cursor, yTopLeft, scale, c, alpha);
+        cursor += advance;
+    }
+}
+
 class QuestVisualizerApp {
 public:
     explicit QuestVisualizerApp(android_app* app)
@@ -409,9 +659,15 @@ private:
     void ProcessAndroidEvents() {
         int events = 0;
         android_poll_source* source = nullptr;
+        int timeoutMillis = sessionRunning_ ? 0 : -1;
 
-        while (ALooper_pollAll(sessionRunning_ ? 0 : -1, nullptr, &events,
-                               reinterpret_cast<void**>(&source)) >= 0) {
+        while (true) {
+            const int pollResult = ALooper_pollOnce(
+                timeoutMillis, nullptr, &events, reinterpret_cast<void**>(&source));
+            if (pollResult < 0) {
+                break;
+            }
+
             if (source) {
                 source->process(app_, source);
             }
@@ -420,6 +676,9 @@ private:
                 exitRenderLoop_ = true;
                 break;
             }
+
+            // Drain any queued events without blocking after the first wake.
+            timeoutMillis = 0;
         }
     }
 
@@ -493,13 +752,23 @@ private:
             return false;
         }
 
-        auto createBooleanAction = [&](XrAction& actionOut, const char* name, const char* localized) -> bool {
+        if (XR_FAILED(xrStringToPath(xrInstance_, "/user/hand/left", &leftHandPath_)) ||
+            XR_FAILED(xrStringToPath(xrInstance_, "/user/hand/right", &rightHandPath_))) {
+            LOGE("Failed to create subaction hand paths.");
+            return false;
+        }
+        const XrPath subactionPaths[] = {leftHandPath_, rightHandPath_};
+
+        auto createAction = [&](XrAction& actionOut,
+                                XrActionType actionType,
+                                const char* name,
+                                const char* localized) -> bool {
             XrActionCreateInfo actionInfo{XR_TYPE_ACTION_CREATE_INFO};
-            actionInfo.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
+            actionInfo.actionType = actionType;
             std::strncpy(actionInfo.actionName, name, XR_MAX_ACTION_NAME_SIZE - 1);
             std::strncpy(actionInfo.localizedActionName, localized, XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
-            actionInfo.countSubactionPaths = 0;
-            actionInfo.subactionPaths = nullptr;
+            actionInfo.countSubactionPaths = 2;
+            actionInfo.subactionPaths = subactionPaths;
             if (XR_FAILED(xrCreateAction(actionSet_, &actionInfo, &actionOut))) {
                 LOGE("xrCreateAction failed for %s", name);
                 return false;
@@ -507,19 +776,19 @@ private:
             return true;
         };
 
-        if (!createBooleanAction(actionNextPreset_, "next_preset", "Next Preset")) return false;
-        if (!createBooleanAction(actionPrevPreset_, "prev_preset", "Previous Preset")) return false;
-        if (!createBooleanAction(actionTogglePlay_, "toggle_play", "Toggle Play Pause")) return false;
-        if (!createBooleanAction(actionNextTrack_, "next_track", "Next Track")) return false;
-        if (!createBooleanAction(actionPrevTrack_, "prev_track", "Previous Track")) return false;
-        if (!createBooleanAction(actionToggleProjection_, "toggle_projection", "Toggle Projection")) return false;
-        if (!createBooleanAction(actionOptionalPack_, "optional_pack", "Optional Preset Pack")) return false;
+        if (!createAction(actionNextPreset_, XR_ACTION_TYPE_BOOLEAN_INPUT, "next_preset", "Next Preset")) return false;
+        if (!createAction(actionPrevPreset_, XR_ACTION_TYPE_BOOLEAN_INPUT, "prev_preset", "Previous Preset")) return false;
+        if (!createAction(actionTogglePlay_, XR_ACTION_TYPE_BOOLEAN_INPUT, "toggle_play", "Toggle Play Pause")) return false;
+        if (!createAction(actionNextTrack_, XR_ACTION_TYPE_BOOLEAN_INPUT, "next_track", "Next Track")) return false;
+        if (!createAction(actionPrevTrack_, XR_ACTION_TYPE_BOOLEAN_INPUT, "prev_track", "Previous Track")) return false;
+        if (!createAction(actionToggleProjection_, XR_ACTION_TYPE_FLOAT_INPUT, "toggle_projection", "Toggle Projection")) return false;
+        if (!createAction(actionOptionalPack_, XR_ACTION_TYPE_FLOAT_INPUT, "optional_pack", "Optional Preset Pack")) return false;
 
         std::vector<XrActionSuggestedBinding> bindings;
 
         auto bind = [&](XrAction action, const char* path) {
             XrPath xrPath = XR_NULL_PATH;
-            if (XR_SUCCEEDED(xrStringToPath(xrInstance_, path, &xrPath))) {
+            if (XR_SUCCEEDED(xrStringToPath(xrInstance_, path, &xrPath)) && xrPath != XR_NULL_PATH) {
                 bindings.push_back({action, xrPath});
             }
         };
@@ -528,18 +797,43 @@ private:
         bind(actionPrevPreset_, "/user/hand/left/input/x/click");
         bind(actionTogglePlay_, "/user/hand/left/input/y/click");
         bind(actionNextTrack_, "/user/hand/right/input/b/click");
-        bind(actionPrevTrack_, "/user/hand/left/input/menu/click");
-        bind(actionToggleProjection_, "/user/hand/right/input/trigger/click");
-        bind(actionOptionalPack_, "/user/hand/left/input/trigger/click");
+        bind(actionPrevTrack_, "/user/hand/left/input/thumbstick/click");
+        bind(actionToggleProjection_, "/user/hand/right/input/trigger/value");
+        bind(actionOptionalPack_, "/user/hand/left/input/trigger/value");
 
-        XrPath touchProfilePath = XR_NULL_PATH;
-        xrStringToPath(xrInstance_, "/interaction_profiles/oculus/touch_controller", &touchProfilePath);
-        if (touchProfilePath != XR_NULL_PATH && !bindings.empty()) {
+        auto suggestBindings = [&](const char* profilePath) -> bool {
+            if (bindings.empty()) {
+                return false;
+            }
+
+            XrPath interactionProfile = XR_NULL_PATH;
+            if (XR_FAILED(xrStringToPath(xrInstance_, profilePath, &interactionProfile)) ||
+                interactionProfile == XR_NULL_PATH) {
+                return false;
+            }
             XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-            suggested.interactionProfile = touchProfilePath;
+            suggested.interactionProfile = interactionProfile;
             suggested.suggestedBindings = bindings.data();
             suggested.countSuggestedBindings = static_cast<uint32_t>(bindings.size());
-            xrSuggestInteractionProfileBindings(xrInstance_, &suggested);
+            const XrResult result = xrSuggestInteractionProfileBindings(xrInstance_, &suggested);
+            if (XR_FAILED(result)) {
+                LOGW("xrSuggestInteractionProfileBindings failed for %s: %d",
+                     profilePath,
+                     static_cast<int>(result));
+                return false;
+            }
+            LOGI("Suggested %u input bindings for %s.",
+                 static_cast<unsigned>(bindings.size()),
+                 profilePath);
+            return true;
+        };
+
+        bool suggestedAnyProfile = false;
+        suggestedAnyProfile |= suggestBindings("/interaction_profiles/meta/touch_controller_plus");
+        suggestedAnyProfile |= suggestBindings("/interaction_profiles/meta/touch_controller_pro");
+        suggestedAnyProfile |= suggestBindings("/interaction_profiles/oculus/touch_controller");
+        if (!suggestedAnyProfile) {
+            LOGW("No controller profile binding suggestions succeeded; controller input may be unavailable.");
         }
 
         XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
@@ -974,7 +1268,9 @@ private:
             uniform vec4 uFlashY;
             uniform vec4 uFlashRT;
             uniform vec4 uFlashLT;
+            uniform vec4 uFlashMenu;
             uniform vec4 uStatus;
+            uniform sampler2D uTextTexture;
             out vec4 fragColor;
 
             float rectMask(vec2 uv, vec2 minPt, vec2 maxPt, float feather) {
@@ -990,7 +1286,7 @@ private:
 
             void main() {
                 vec3 color = vec3(0.0);
-                float alpha = rectMask(vUv, vec2(0.02, 0.04), vec2(0.98, 0.96), 0.004) * 0.62;
+                float alpha = rectMask(vUv, vec2(0.015, 0.02), vec2(0.985, 0.985), 0.0035) * 0.62;
                 if (alpha <= 0.001) {
                     discard;
                 }
@@ -1001,8 +1297,9 @@ private:
                 color = blendRect(color, vUv, vec2(0.54, 0.59), vec2(0.93, 0.84), vec3(0.93, 0.34, 0.26), 0.90 + uFlashA.x);
                 color = blendRect(color, vUv, vec2(0.07, 0.30), vec2(0.46, 0.55), vec3(0.18, 0.74, 0.38), 0.90 + uFlashY.x);
                 color = blendRect(color, vUv, vec2(0.54, 0.30), vec2(0.93, 0.55), vec3(0.91, 0.82, 0.28), 0.90 + uFlashB.x);
-                color = blendRect(color, vUv, vec2(0.07, 0.08), vec2(0.46, 0.24), vec3(0.58, 0.32, 0.86), 0.88 + uFlashLT.x);
-                color = blendRect(color, vUv, vec2(0.54, 0.08), vec2(0.93, 0.24), vec3(0.23, 0.72, 0.85), 0.88 + uFlashRT.x);
+                color = blendRect(color, vUv, vec2(0.07, 0.08), vec2(0.33, 0.24), vec3(0.58, 0.32, 0.86), 0.88 + uFlashLT.x);
+                color = blendRect(color, vUv, vec2(0.37, 0.08), vec2(0.63, 0.24), vec3(0.90, 0.54, 0.20), 0.88 + uFlashMenu.x);
+                color = blendRect(color, vUv, vec2(0.67, 0.08), vec2(0.93, 0.24), vec3(0.23, 0.72, 0.85), 0.88 + uFlashRT.x);
 
                 // Audio mode dots: synthetic, global, media
                 vec3 inactive = vec3(0.22, 0.22, 0.24);
@@ -1025,6 +1322,10 @@ private:
                 // Playback indicator
                 vec3 playColor = mix(vec3(0.56, 0.20, 0.20), vec3(0.26, 0.82, 0.38), step(0.5, playing));
                 color = blendRect(color, vUv, vec2(0.73, 0.88), vec2(0.89, 0.93), playColor, 1.0);
+
+                float textMask = texture(uTextTexture, vUv).r;
+                color = mix(color, vec3(0.95), clamp(textMask * 1.25, 0.0, 1.0));
+                alpha = max(alpha, textMask * 0.95);
 
                 fragColor = vec4(color, alpha);
             }
@@ -1056,7 +1357,9 @@ private:
         hudFlashYLoc_ = glGetUniformLocation(hudProgram_, "uFlashY");
         hudFlashRtLoc_ = glGetUniformLocation(hudProgram_, "uFlashRT");
         hudFlashLtLoc_ = glGetUniformLocation(hudProgram_, "uFlashLT");
+        hudFlashMenuLoc_ = glGetUniformLocation(hudProgram_, "uFlashMenu");
         hudStatusLoc_ = glGetUniformLocation(hudProgram_, "uStatus");
+        hudTextSamplerLoc_ = glGetUniformLocation(hudProgram_, "uTextTexture");
 
         const float hudVertices[] = {
             -0.5f, -0.5f, 0.0f, 0.0f,
@@ -1077,6 +1380,26 @@ private:
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<void*>(sizeof(float) * 2));
         glBindVertexArray(0);
+
+        glGenTextures(1, &hudTextTexture_);
+        glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        hudTextPixels_.assign(static_cast<size_t>(kHudTextTextureWidth * kHudTextTextureHeight), 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     GL_R8,
+                     kHudTextTextureWidth,
+                     kHudTextTextureHeight,
+                     0,
+                     GL_RED,
+                     GL_UNSIGNED_BYTE,
+                     hudTextPixels_.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+        hudTextDirty_ = true;
 
         return true;
     }
@@ -1177,11 +1500,14 @@ private:
             projectm_load_preset_file(projectM_, presetFiles_.front().c_str(), false);
             LOGI("Loaded first preset from assets: %s", presetFiles_.front().c_str());
             usingFallbackPreset_ = false;
+            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_.front());
         } else {
             projectm_load_preset_data(projectM_, kFallbackPreset, false);
             LOGW("No preset assets found, using built-in fallback preset.");
             usingFallbackPreset_ = true;
+            currentPresetLabel_ = "FALLBACK";
         }
+        hudTextDirty_ = true;
 
         if (EnsureDirectory(textureOutputDir)) {
             const char* texturePath = textureOutputDir.c_str();
@@ -1254,6 +1580,9 @@ private:
         }
 
         if (nowSeconds - lastExternalAudioSeconds_ > kAudioFallbackDelaySeconds) {
+            if (currentAudioMode_ != AudioMode::Synthetic || currentMediaPlaying_) {
+                hudTextDirty_ = true;
+            }
             AddSyntheticAudioForFrame();
             currentAudioMode_ = AudioMode::Synthetic;
             currentMediaPlaying_ = false;
@@ -1294,6 +1623,16 @@ private:
             projectm_load_preset_file(projectM_, presetFiles_.front().c_str(), false);
             usingFallbackPreset_ = false;
             currentPresetIndex_ = 0;
+            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_.front());
+            hudTextDirty_ = true;
+        }
+
+        if (!presetFiles_.empty() && currentPresetIndex_ < presetFiles_.size()) {
+            const std::string updated = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
+            if (updated != currentPresetLabel_) {
+                currentPresetLabel_ = updated;
+                hudTextDirty_ = true;
+            }
         }
 
         LOGI("Preset list updated (%zu presets).", presetFiles_.size());
@@ -1314,6 +1653,143 @@ private:
         currentPresetIndex_ = static_cast<size_t>(next);
         projectm_load_preset_file(projectM_, presetFiles_[currentPresetIndex_].c_str(), smooth);
         lastPresetSwitchSeconds_ = ElapsedSeconds();
+        currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
+        hudTextDirty_ = true;
+    }
+
+    std::string BuildPresetDisplayLabel(const std::string& presetPath) const {
+        std::string name = StripExtension(BasenamePath(presetPath));
+        ReplaceAll(name, "__", " - ");
+        ReplaceAll(name, "_", " ");
+        return SanitizeHudText(name, 56);
+    }
+
+    std::string BuildTrackDisplayLabel(const std::string& rawLabel) const {
+        std::string label = rawLabel;
+        if (label.empty()) {
+            label = "none";
+        }
+
+        if (label.rfind("http://", 0) == 0 || label.rfind("https://", 0) == 0) {
+            const std::string name = BasenamePath(label);
+            if (!name.empty() && name != label) {
+                label = name;
+            }
+        } else if (label.find('/') != std::string::npos || label.find('\\') != std::string::npos) {
+            label = BasenamePath(label);
+        }
+
+        return SanitizeHudText(label, 56);
+    }
+
+    std::string AudioModeLabel() const {
+        switch (currentAudioMode_) {
+            case AudioMode::Synthetic:
+                return "SYNTHETIC";
+            case AudioMode::GlobalCapture:
+                return "GLOBAL CAPTURE";
+            case AudioMode::MediaFallback:
+                return "MEDIA FALLBACK";
+            default:
+                return "UNKNOWN";
+        }
+    }
+
+    void DrawHudTextCentered(float minU,
+                             float maxU,
+                             float minV,
+                             float maxV,
+                             const std::string& text,
+                             int scale,
+                             uint8_t alpha = 255) {
+        if (text.empty()) {
+            return;
+        }
+
+        const int rectMinX = static_cast<int>(minU * static_cast<float>(kHudTextTextureWidth));
+        const int rectMaxX = static_cast<int>(maxU * static_cast<float>(kHudTextTextureWidth));
+        const int rectTop = static_cast<int>((1.0f - maxV) * static_cast<float>(kHudTextTextureHeight));
+        const int rectBottom = static_cast<int>((1.0f - minV) * static_cast<float>(kHudTextTextureHeight));
+
+        const int textWidth = MeasureHudTextWidth(text, scale);
+        const int textHeight = kHudGlyphHeight * scale;
+
+        const int x = rectMinX + std::max(0, (rectMaxX - rectMinX - textWidth) / 2);
+        const int y = rectTop + std::max(0, (rectBottom - rectTop - textHeight) / 2);
+        DrawHudText(hudTextPixels_, x, y, scale, text, alpha);
+    }
+
+    void RefreshHudTextTextureIfNeeded(double nowSeconds) {
+        if (hudTextTexture_ == 0) {
+            return;
+        }
+
+        const std::string audioLabel = SanitizeHudText(AudioModeLabel(), 18);
+        const std::string projectionLabel =
+            projectionMode_ == ProjectionMode::FrontDome ? "DOME" : "SPHERE";
+        const std::string playbackLabel = currentMediaPlaying_ ? "PLAYING" : "PAUSED";
+        const std::string presetLabel = SanitizeHudText(currentPresetLabel_, 56);
+        const std::string trackLabel = BuildTrackDisplayLabel(currentMediaLabel_);
+        const bool inputFeedbackActive = nowSeconds <= hudInputFeedbackUntilSeconds_;
+        const std::string inputFeedbackLabel = inputFeedbackActive
+            ? SanitizeHudText(hudInputFeedbackLabel_, 40)
+            : "READY";
+
+        const bool changed =
+            hudTextDirty_ ||
+            hudRenderedAudioLabel_ != audioLabel ||
+            hudRenderedProjectionLabel_ != projectionLabel ||
+            hudRenderedPlaybackLabel_ != playbackLabel ||
+            hudRenderedPresetLabel_ != presetLabel ||
+            hudRenderedTrackLabel_ != trackLabel ||
+            hudRenderedInputFeedbackLabel_ != inputFeedbackLabel;
+
+        if (!changed) {
+            return;
+        }
+
+        hudRenderedAudioLabel_ = audioLabel;
+        hudRenderedProjectionLabel_ = projectionLabel;
+        hudRenderedPlaybackLabel_ = playbackLabel;
+        hudRenderedPresetLabel_ = presetLabel;
+        hudRenderedTrackLabel_ = trackLabel;
+        hudRenderedInputFeedbackLabel_ = inputFeedbackLabel;
+        hudTextDirty_ = false;
+
+        std::fill(hudTextPixels_.begin(), hudTextPixels_.end(), 0);
+        DrawHudText(hudTextPixels_, 34, 14, 2, "AUDIO: " + hudRenderedAudioLabel_, 255);
+        DrawHudText(hudTextPixels_, 360, 14, 2, "PROJ: " + hudRenderedProjectionLabel_, 255);
+        DrawHudText(hudTextPixels_, 660, 14, 2, "PLAY: " + hudRenderedPlaybackLabel_, 255);
+        DrawHudText(hudTextPixels_, 34, 48, 2, "PRESET: " + hudRenderedPresetLabel_, 255);
+        DrawHudText(hudTextPixels_, 34, 78, 2, "TRACK: " + hudRenderedTrackLabel_, 255);
+
+        DrawHudTextCentered(0.07f, 0.46f, 0.59f, 0.84f, "X PREV PRESET", 3);
+        DrawHudTextCentered(0.54f, 0.93f, 0.59f, 0.84f, "A NEXT PRESET", 3);
+        DrawHudTextCentered(0.07f, 0.46f, 0.30f, 0.55f, "Y PLAY PAUSE", 3);
+        DrawHudTextCentered(0.54f, 0.93f, 0.30f, 0.55f, "B NEXT TRACK", 3);
+        DrawHudTextCentered(0.07f,
+                            0.93f,
+                            0.55f,
+                            0.59f,
+                            "INPUT: " + hudRenderedInputFeedbackLabel_,
+                            2,
+                            inputFeedbackActive ? 255 : 170);
+        DrawHudTextCentered(0.07f, 0.33f, 0.08f, 0.24f, "LT GET PACK", 2);
+        DrawHudTextCentered(0.37f, 0.63f, 0.08f, 0.24f, "L3 PREV", 2);
+        DrawHudTextCentered(0.67f, 0.93f, 0.08f, 0.24f, "RT TOGGLE", 2);
+
+        glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexSubImage2D(GL_TEXTURE_2D,
+                        0,
+                        0,
+                        0,
+                        kHudTextTextureWidth,
+                        kHudTextTextureHeight,
+                        GL_RED,
+                        GL_UNSIGNED_BYTE,
+                        hudTextPixels_.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
     bool GetActionPressed(XrAction action) const {
@@ -1331,6 +1807,36 @@ private:
         return state.isActive && state.changedSinceLastSync && state.currentState;
     }
 
+    bool GetFloatActionPressed(XrAction action, float threshold, bool& wasPressedLastFrame) const {
+        if (action == XR_NULL_HANDLE) {
+            wasPressedLastFrame = false;
+            return false;
+        }
+
+        XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
+        getInfo.action = action;
+        XrActionStateFloat state{XR_TYPE_ACTION_STATE_FLOAT};
+        if (XR_FAILED(xrGetActionStateFloat(xrSession_, &getInfo, &state))) {
+            wasPressedLastFrame = false;
+            return false;
+        }
+
+        const bool isPressed = state.isActive && state.currentState >= threshold;
+        const bool justPressed = isPressed && !wasPressedLastFrame;
+        wasPressedLastFrame = isPressed;
+        return justPressed;
+    }
+
+    void ExtendHudVisibility(double nowSeconds, double durationSeconds) {
+        hudVisibleUntilSeconds_ = std::max(hudVisibleUntilSeconds_, nowSeconds + durationSeconds);
+    }
+
+    void SetHudInputFeedback(double nowSeconds, const std::string& feedbackLabel) {
+        hudInputFeedbackLabel_ = feedbackLabel;
+        hudInputFeedbackUntilSeconds_ = nowSeconds + kHudInputFeedbackSeconds;
+        hudTextDirty_ = true;
+    }
+
     void PollInputActions(double nowSeconds) {
         if (!sessionRunning_ || actionSet_ == XR_NULL_HANDLE) {
             return;
@@ -1343,50 +1849,83 @@ private:
         syncInfo.countActiveActionSets = 1;
         syncInfo.activeActionSets = &activeSet;
         if (XR_FAILED(xrSyncActions(xrSession_, &syncInfo))) {
+            rightTriggerPressed_ = false;
+            leftTriggerPressed_ = false;
             return;
         }
 
+        bool handledInput = false;
         if (GetActionPressed(actionNextPreset_)) {
             SwitchPresetRelative(+1, true);
-            hudFlashA_ = 1.0f;
+            hudFlashA_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "A NEXT PRESET");
+            handledInput = true;
         }
         if (GetActionPressed(actionPrevPreset_)) {
             SwitchPresetRelative(-1, true);
-            hudFlashX_ = 1.0f;
+            hudFlashX_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "X PREV PRESET");
+            handledInput = true;
         }
         if (GetActionPressed(actionTogglePlay_)) {
             CallJavaControlMethod("onNativeTogglePlayback");
-            hudFlashY_ = 1.0f;
+            hudFlashY_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "Y PLAY PAUSE");
+            handledInput = true;
         }
         if (GetActionPressed(actionNextTrack_)) {
             CallJavaControlMethod("onNativeNextTrack");
-            hudFlashB_ = 1.0f;
+            hudFlashB_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "B NEXT TRACK");
+            handledInput = true;
         }
         if (GetActionPressed(actionPrevTrack_)) {
             CallJavaControlMethod("onNativePreviousTrack");
-            hudFlashX_ = std::max(hudFlashX_, 0.6f);
+            hudFlashMenu_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "L3 PREV TRACK");
+            handledInput = true;
         }
-        if (GetActionPressed(actionToggleProjection_)) {
+        if (GetFloatActionPressed(actionToggleProjection_, kTriggerPressThreshold, rightTriggerPressed_)) {
             projectionMode_ = projectionMode_ == ProjectionMode::FullSphere
                 ? ProjectionMode::FrontDome
                 : ProjectionMode::FullSphere;
-            hudFlashRt_ = 1.0f;
+            hudFlashRt_ = kHudFlashPeak;
+            hudTextDirty_ = true;
+            SetHudInputFeedback(nowSeconds,
+                                projectionMode_ == ProjectionMode::FrontDome
+                                    ? "RT PROJECTION DOME"
+                                    : "RT PROJECTION SPHERE");
+            handledInput = true;
         }
-        if (GetActionPressed(actionOptionalPack_)) {
+        if (GetFloatActionPressed(actionOptionalPack_, kTriggerPressThreshold, leftTriggerPressed_)) {
             CallJavaControlMethod("onNativeRequestOptionalCreamPack");
             lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
-            hudFlashLt_ = 1.0f;
+            hudFlashLt_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "LT REQUEST PACK");
+            handledInput = true;
+        }
+
+        if (handledInput) {
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
         }
     }
 
-    void UpdateUiStateFromJava() {
+    void UpdateUiStateFromJava(double nowSeconds) {
         std::lock_guard<std::mutex> lock(g_uiMutex);
+        const std::string mediaLabel = g_mediaLabel;
+        if (currentAudioMode_ != g_audioMode ||
+            currentMediaPlaying_ != g_mediaPlaying ||
+            currentMediaLabel_ != mediaLabel) {
+            hudTextDirty_ = true;
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+        }
         currentAudioMode_ = g_audioMode;
         currentMediaPlaying_ = g_mediaPlaying;
+        currentMediaLabel_ = mediaLabel;
     }
 
     void AdvanceHudFlash(float deltaSeconds) {
-        const float decay = std::max(deltaSeconds * 2.8f, 0.01f);
+        const float decay = std::max(deltaSeconds * 2.2f, 0.01f);
         auto decayValue = [decay](float& value) {
             value = std::max(0.0f, value - decay);
         };
@@ -1396,10 +1935,14 @@ private:
         decayValue(hudFlashY_);
         decayValue(hudFlashRt_);
         decayValue(hudFlashLt_);
+        decayValue(hudFlashMenu_);
     }
 
-    void RenderHud(const glm::mat4& projection, const glm::mat4& view, const XrPosef& pose) {
+    void RenderHud(const glm::mat4& projection, const glm::mat4& view, const XrPosef& pose, double nowSeconds) {
         if (hudProgram_ == 0 || hudVao_ == 0) {
+            return;
+        }
+        if (nowSeconds > hudVisibleUntilSeconds_) {
             return;
         }
 
@@ -1417,6 +1960,7 @@ private:
         glDisable(GL_DEPTH_TEST);
 
         glUseProgram(hudProgram_);
+        RefreshHudTextTextureIfNeeded(nowSeconds);
         glUniformMatrix4fv(hudMvpLoc_, 1, GL_FALSE, glm::value_ptr(mvp));
         glUniform4f(hudFlashALoc_, hudFlashA_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashBLoc_, hudFlashB_, 0.0f, 0.0f, 0.0f);
@@ -1424,15 +1968,23 @@ private:
         glUniform4f(hudFlashYLoc_, hudFlashY_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashRtLoc_, hudFlashRt_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashLtLoc_, hudFlashLt_, 0.0f, 0.0f, 0.0f);
+        glUniform4f(hudFlashMenuLoc_, hudFlashMenu_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudStatusLoc_,
                     static_cast<float>(static_cast<int>(currentAudioMode_)),
                     projectionMode_ == ProjectionMode::FrontDome ? 1.0f : 0.0f,
                     currentMediaPlaying_ ? 1.0f : 0.0f,
                     0.0f);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
+        glUniform1i(hudTextSamplerLoc_, 1);
+        glActiveTexture(GL_TEXTURE0);
 
         glBindVertexArray(hudVao_);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glBindVertexArray(0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glActiveTexture(GL_TEXTURE0);
     }
 
     void RenderProjectMFrame(double nowSeconds, float deltaSeconds) {
@@ -1450,7 +2002,9 @@ private:
         if (presetFiles_.size() > 1 && nowSeconds - lastPresetSwitchSeconds_ > kPresetSwitchSeconds) {
             currentPresetIndex_ = (currentPresetIndex_ + 1) % presetFiles_.size();
             projectm_load_preset_file(projectM_, presetFiles_[currentPresetIndex_].c_str(), true);
+            currentPresetLabel_ = BuildPresetDisplayLabel(presetFiles_[currentPresetIndex_]);
             lastPresetSwitchSeconds_ = nowSeconds;
+            hudTextDirty_ = true;
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, projectMFbo_);
@@ -1496,6 +2050,9 @@ private:
                     sessionRunning_ = true;
                     lastFrameSeconds_ = ElapsedSeconds();
                     lastPresetSwitchSeconds_ = lastFrameSeconds_;
+                    rightTriggerPressed_ = false;
+                    leftTriggerPressed_ = false;
+                    ExtendHudVisibility(lastFrameSeconds_, kHudVisibleOnStartSeconds);
                     LOGI("XR session started.");
                 } else {
                     LOGE("xrBeginSession failed.");
@@ -1508,6 +2065,8 @@ private:
                 if (sessionRunning_) {
                     xrEndSession(xrSession_);
                     sessionRunning_ = false;
+                    rightTriggerPressed_ = false;
+                    leftTriggerPressed_ = false;
                     LOGI("XR session stopped.");
                 }
                 break;
@@ -1548,7 +2107,7 @@ private:
             lastFrameSeconds_ = nowSeconds;
 
             PollInputActions(nowSeconds);
-            UpdateUiStateFromJava();
+            UpdateUiStateFromJava(nowSeconds);
             AdvanceHudFlash(std::max(deltaSeconds, 0.0f));
             RenderProjectMFrame(nowSeconds, deltaSeconds);
 
@@ -1617,7 +2176,7 @@ private:
                     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
                     glBindVertexArray(0);
 
-                    RenderHud(projection, view, xrViews_[viewIndex].pose);
+                    RenderHud(projection, view, xrViews_[viewIndex].pose, nowSeconds);
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
                     XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -1707,6 +2266,11 @@ private:
             glDeleteVertexArrays(1, &hudVao_);
             hudVao_ = 0;
         }
+        if (hudTextTexture_ != 0) {
+            glDeleteTextures(1, &hudTextTexture_);
+            hudTextTexture_ = 0;
+        }
+        hudTextPixels_.clear();
 
         if (swapchainFramebuffer_ != 0) {
             glDeleteFramebuffers(1, &swapchainFramebuffer_);
@@ -1747,6 +2311,8 @@ private:
             xrDestroyActionSet(actionSet_);
             actionSet_ = XR_NULL_HANDLE;
         }
+        leftHandPath_ = XR_NULL_PATH;
+        rightHandPath_ = XR_NULL_PATH;
 
         if (xrInstance_ != XR_NULL_HANDLE) {
             xrDestroyInstance(xrInstance_);
@@ -1788,6 +2354,8 @@ private:
     XrSession xrSession_{XR_NULL_HANDLE};
     XrSpace xrAppSpace_{XR_NULL_HANDLE};
     XrSessionState xrSessionState_{XR_SESSION_STATE_UNKNOWN};
+    XrPath leftHandPath_{XR_NULL_PATH};
+    XrPath rightHandPath_{XR_NULL_PATH};
     XrActionSet actionSet_{XR_NULL_HANDLE};
     XrAction actionNextPreset_{XR_NULL_HANDLE};
     XrAction actionPrevPreset_{XR_NULL_HANDLE};
@@ -1817,7 +2385,11 @@ private:
     GLint hudFlashYLoc_{-1};
     GLint hudFlashRtLoc_{-1};
     GLint hudFlashLtLoc_{-1};
+    GLint hudFlashMenuLoc_{-1};
     GLint hudStatusLoc_{-1};
+    GLint hudTextSamplerLoc_{-1};
+    GLuint hudTextTexture_{0};
+    std::vector<uint8_t> hudTextPixels_;
 
     GLuint sphereVao_{0};
     GLuint sphereVbo_{0};
@@ -1834,6 +2406,16 @@ private:
     bool usingFallbackPreset_{false};
     AudioMode currentAudioMode_{AudioMode::Synthetic};
     bool currentMediaPlaying_{false};
+    std::string currentMediaLabel_{"none"};
+    std::string currentPresetLabel_{"FALLBACK"};
+    bool hudTextDirty_{true};
+    std::string hudRenderedAudioLabel_;
+    std::string hudRenderedProjectionLabel_;
+    std::string hudRenderedPlaybackLabel_;
+    std::string hudRenderedPresetLabel_;
+    std::string hudRenderedTrackLabel_;
+    std::string hudInputFeedbackLabel_{"READY"};
+    std::string hudRenderedInputFeedbackLabel_;
 
     ProjectionMode projectionMode_{ProjectionMode::FullSphere};
     float hudFlashA_{0.0f};
@@ -1842,6 +2424,11 @@ private:
     float hudFlashY_{0.0f};
     float hudFlashRt_{0.0f};
     float hudFlashLt_{0.0f};
+    float hudFlashMenu_{0.0f};
+    bool rightTriggerPressed_{false};
+    bool leftTriggerPressed_{false};
+    double hudVisibleUntilSeconds_{kHudVisibleOnStartSeconds};
+    double hudInputFeedbackUntilSeconds_{0.0};
 
     float audioCarrierPhase_{0.0f};
     float audioBeatPhase_{0.0f};
@@ -1892,8 +2479,14 @@ Java_com_projectm_questxr_QuestNativeActivity_nativeUpdateUiState(
     }
 
     g_mediaPlaying = mediaPlaying == JNI_TRUE;
-    (void)env;
-    (void)mediaLabel;
+    g_mediaLabel = "none";
+    if (env != nullptr && mediaLabel != nullptr) {
+        const char* utf = env->GetStringUTFChars(mediaLabel, nullptr);
+        if (utf != nullptr) {
+            g_mediaLabel = utf;
+            env->ReleaseStringUTFChars(mediaLabel, utf);
+        }
+    }
 }
 
 void android_main(android_app* app) {

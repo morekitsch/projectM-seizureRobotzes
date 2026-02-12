@@ -2,11 +2,36 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL Android)
     message(FATAL_ERROR "ENABLE_QUEST_VR_APP is only supported when targeting Android (Quest).")
 endif()
 
-if(DEFINED ENV{OPENXR_SDK})
-    list(APPEND CMAKE_PREFIX_PATH "$ENV{OPENXR_SDK}")
+set(_openxr_roots "")
+if(DEFINED OPENXR_SDK AND NOT OPENXR_SDK STREQUAL "")
+    list(APPEND _openxr_roots "${OPENXR_SDK}")
+endif()
+if(DEFINED ENV{OPENXR_SDK} AND NOT "$ENV{OPENXR_SDK}" STREQUAL "")
+    list(APPEND _openxr_roots "$ENV{OPENXR_SDK}")
 endif()
 
-find_package(OpenXR REQUIRED)
+set(_openxr_package_dirs "")
+foreach(_openxr_root IN LISTS _openxr_roots)
+    list(APPEND _openxr_package_dirs
+            "${_openxr_root}"
+            "${_openxr_root}/lib/cmake/OpenXR"
+            "${_openxr_root}/lib/cmake/openxr"
+            "${_openxr_root}/build/native"
+    )
+endforeach()
+
+list(REMOVE_DUPLICATES _openxr_package_dirs)
+foreach(_openxr_dir IN LISTS _openxr_package_dirs)
+    if(EXISTS "${_openxr_dir}")
+        list(APPEND CMAKE_PREFIX_PATH "${_openxr_dir}")
+        if((NOT DEFINED OpenXR_DIR OR OpenXR_DIR STREQUAL "" OR OpenXR_DIR STREQUAL "OpenXR_DIR-NOTFOUND")
+                AND (EXISTS "${_openxr_dir}/OpenXRConfig.cmake" OR EXISTS "${_openxr_dir}/openxr-config.cmake"))
+            set(OpenXR_DIR "${_openxr_dir}")
+        endif()
+    endif()
+endforeach()
+
+find_package(OpenXR REQUIRED CONFIG)
 
 set(_ndk_root "${CMAKE_ANDROID_NDK}")
 if(NOT _ndk_root)
@@ -101,5 +126,6 @@ target_compile_definitions(projectm_quest_openxr
 
 set_target_properties(projectm_quest_openxr PROPERTIES
         OUTPUT_NAME "projectm_quest_openxr"
+        DEBUG_POSTFIX ""
         FOLDER "apps"
         )

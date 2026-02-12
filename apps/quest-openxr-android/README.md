@@ -57,7 +57,7 @@ adb shell setprop debug.projectm.quest.projection sphere
 
 ## In-Headset UI + Controls
 
-The app now renders a head-locked control HUD in VR (color-coded tiles + status indicators).
+The app renders a head-locked control HUD in VR with color tiles plus text labels so controls are self-labeled in-headset.
 
 Default controller bindings:
 
@@ -65,15 +65,22 @@ Default controller bindings:
 2. Left `X`: previous preset
 3. Left `Y`: play/pause media fallback
 4. Right `B`: next media track
-5. Left `Menu`: previous media track
-6. Right trigger click: toggle sphere/dome projection
-7. Left trigger click: request optional Cream preset download and rescan presets
+5. Left thumbstick click (`L3`): previous media track
+6. Right trigger pull: toggle sphere/dome projection
+7. Left trigger pull: request optional Cream preset download and rescan presets
 
-HUD status indicators show:
+HUD behavior:
+
+- HUD appears at launch and after controller/UI activity, then auto-hides after a short timeout.
+
+HUD status includes:
 
 - audio mode (`synthetic`, `global capture`, `media fallback`)
 - projection mode (`sphere` or `dome`)
 - playback state (`playing`/`paused`)
+- current preset name
+- current media track/source label
+- recent controller input feedback (`INPUT: ...`) after button/trigger actions
 
 ## Optional Preset Pack
 

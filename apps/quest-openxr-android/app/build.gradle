@@ -2,6 +2,53 @@ plugins {
     id 'com.android.application'
 }
 
+def resolveOpenxrSdkPath() {
+    def propsFile = rootProject.file('local.properties')
+    if (propsFile.exists()) {
+        def props = new Properties()
+        propsFile.withInputStream { props.load(it) }
+        def fromLocal = props.getProperty('openxr.sdk')
+        if (fromLocal != null && !fromLocal.trim().isEmpty()) {
+            return fromLocal.trim()
+        }
+    }
+
+    def fromEnv = System.getenv('OPENXR_SDK')
+    if (fromEnv != null && !fromEnv.trim().isEmpty()) {
+        return fromEnv.trim()
+    }
+
+    return null
+}
+
+def shouldRequireOpenxrSdkPath() {
+    if (gradle.startParameter.taskNames.isEmpty()) {
+        return false
+    }
+
+    return gradle.startParameter.taskNames.any { name ->
+        def task = name.toLowerCase(Locale.ROOT)
+        task.contains('externalnativebuild') ||
+                task.contains('assemble') ||
+                task.contains('bundle') ||
+                task.contains('install')
+    }
+}
+
+def openxrSdkPath = resolveOpenxrSdkPath()
+def configureNativeBuild = openxrSdkPath != null
+def missingOpenxrPathMessage = "OpenXR SDK path not configured. Set OPENXR_SDK in the environment or set " +
+        "'openxr.sdk=/path/to/openxr/cmake/prefix' in apps/quest-openxr-android/local.properties."
+
+if (openxrSdkPath == null) {
+    if (shouldRequireOpenxrSdkPath()) {
+        throw new GradleException(missingOpenxrPathMessage)
+    }
+
+    logger.lifecycle("OpenXR SDK path not configured; Gradle sync can continue, but native build tasks will fail. " +
+            "Set OPENXR_SDK or openxr.sdk in local.properties before building.")
+}
+
 android {
     namespace 'com.projectm.questxr'
     compileSdk 34
@@ -17,14 +64,19 @@ android {
             abiFilters 'arm64-v8a'
         }
 
-        externalNativeBuild {
-            cmake {
-                arguments '-DANDROID_STL=c++_shared',
-                          '-DENABLE_QUEST_VR_APP=ON',
-                          '-DENABLE_SDL_UI=OFF',
-                          '-DBUILD_TESTING=OFF',
-                          '-DENABLE_SYSTEM_PROJECTM_EVAL=OFF'
-                cppFlags '-std=c++14'
+        if (configureNativeBuild) {
+            externalNativeBuild {
+                cmake {
+                    arguments '-DANDROID_STL=c++_shared',
+                              '-DENABLE_QUEST_VR_APP=ON',
+                              '-DENABLE_SDL_UI=OFF',
+                              '-DBUILD_TESTING=OFF',
+                              '-DENABLE_SYSTEM_PROJECTM_EVAL=OFF',
+                              "-DOPENXR_SDK=${openxrSdkPath}",
+                              "-DCMAKE_PREFIX_PATH=${openxrSdkPath}"
+                    cppFlags '-std=c++14'
+                    targets 'projectm_quest_openxr'
+                }
             }
         }
     }
@@ -39,11 +91,12 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path file('../../../../CMakeLists.txt')
-            version '3.22.1'
-            targets 'projectm_quest_openxr'
+    if (configureNativeBuild) {
+        externalNativeBuild {
+            cmake {
+                path file('../../../CMakeLists.txt')
+                version '3.22.1'
+            }
         }
     }
 
