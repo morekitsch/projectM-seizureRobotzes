@@ -176,6 +176,17 @@ available there.
 There are some open-source applications that make use of libprojectM which can be found in
 the [projectM organization's repositories](https://github.com/projectM-visualizer) and elsewhere.
 
+## Experimental Meta Quest OpenXR host app
+
+This repository now also contains an experimental Android NativeActivity host app that targets Meta Quest via OpenXR.
+It renders projectM into an offscreen texture and projects it onto a surrounding sphere (or front dome mode), attempts
+global headset-audio capture with a media-player fallback path, supports automatic preset-pack downloads, and includes a
+basic in-headset controller HUD.
+
+Build scaffolding and setup notes are in:
+
+- [apps/quest-openxr-android/README.md](apps/quest-openxr-android/README.md)
+
 ---
 
 # See Also

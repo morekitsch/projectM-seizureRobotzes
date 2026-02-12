@@ -1,0 +1,100 @@
+# projectM Quest OpenXR App (Prototype)
+
+This Android Studio project packages an experimental Quest-compatible `NativeActivity` that:
+
+- runs an OpenXR render loop on Meta Quest,
+- renders projectM into an offscreen texture,
+- maps that texture onto the inside of a sphere for full-surround visuals,
+- supports a front-dome projection mode.
+
+## Status
+
+This is an integration prototype, not a production-ready headset app yet.
+
+- Audio input pipeline:
+  - First tries global output capture (`Visualizer` session `0`) so visuals can react to active headset audio.
+  - If global capture is blocked by runtime restrictions, falls back to an in-app media player plus session capture.
+  - If neither source is available, native synthetic audio fallback remains active.
+- Presets:
+  - Bundled starter presets still exist in APK assets.
+  - Auto-downloads `presets-en-d` (around 50 presets) on first run.
+  - Optional `presets-cream-of-the-crop` download can be enabled with a flag file.
+- Runtime target: `arm64-v8a`.
+
+## Prerequisites
+
+1. Android Studio with SDK Platform 34 and NDK installed.
+2. OpenXR SDK for Android (Khronos) installed with CMake package files available, and `OPENXR_SDK` exported in your shell.
+3. A Quest headset in developer mode.
+
+## Build
+
+1. Open `apps/quest-openxr-android` in Android Studio.
+2. Set the environment variable before launching Android Studio:
+
+```bash
+export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+```
+
+3. Build and run the `app` module on the headset.
+
+The Gradle project invokes the root CMake build and enables `-DENABLE_QUEST_VR_APP=ON`.
+
+## Projection Modes
+
+- Default: full-sphere (`360 x 180` mapping).
+- Dome mode: set a debug property before launch:
+
+```bash
+adb shell setprop debug.projectm.quest.projection dome
+```
+
+To revert to full sphere:
+
+```bash
+adb shell setprop debug.projectm.quest.projection sphere
+```
+
+## In-Headset UI + Controls
+
+The app now renders a head-locked control HUD in VR (color-coded tiles + status indicators).
+
+Default controller bindings:
+
+1. Right `A`: next preset
+2. Left `X`: previous preset
+3. Left `Y`: play/pause media fallback
+4. Right `B`: next media track
+5. Left `Menu`: previous media track
+6. Right trigger click: toggle sphere/dome projection
+7. Left trigger click: request optional Cream preset download and rescan presets
+
+HUD status indicators show:
+
+- audio mode (`synthetic`, `global capture`, `media fallback`)
+- projection mode (`sphere` or `dome`)
+- playback state (`playing`/`paused`)
+
+## Optional Preset Pack
+
+To enable download of `presets-cream-of-the-crop`, create this flag file and relaunch:
+
+```bash
+adb shell "mkdir -p /sdcard/Android/data/com.projectm.questxr/files && touch /sdcard/Android/data/com.projectm.questxr/files/enable_cream_download.flag"
+```
+
+## Media Fallback Source
+
+If global output capture is unavailable, the app tries these sources in order:
+
+1. `media_source.txt` in app internal files (`http(s)` URL or absolute file path, first line only).
+2. First audio file found in app external music folder.
+3. First audio file found in shared Music storage.
+
+Local file scan currently includes: `mp3`, `m4a`, `aac`, `ogg`, `wav`, `flac`.
+
+To set an explicit stream URL for fallback playback in debug builds:
+
+```bash
+adb shell "run-as com.projectm.questxr sh -c 'printf %s https://example.com/stream.mp3 > files/media_source.txt'"
+```
