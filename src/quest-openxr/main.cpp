@@ -1306,12 +1306,15 @@ private:
             void main() {
                 vec3 dir = normalize(vDirection);
 
-                if (uProjectionMode == 1 && dir.z > 0.0) {
+                // On Quest in this app's space, +Z is forward for the viewed content.
+                // Dome mode should render the forward hemisphere and hide the rear half.
+                if (uProjectionMode == 1 && dir.z < 0.0) {
                     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
                     return;
                 }
 
-                float u = atan(dir.x, -dir.z) / (2.0 * PI) + 0.5;
+                // Place equirectangular seam on the rear hemisphere (behind the user).
+                float u = atan(dir.x, dir.z) / (2.0 * PI) + 0.5;
                 float v = asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5;
                 vec2 uv = vec2(u, 1.0 - v);
                 fragColor = texture(uProjectMTexture, uv);
