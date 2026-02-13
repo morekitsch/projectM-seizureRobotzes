@@ -1,0 +1,90 @@
+C/C++ Structured Log-
++
+)/home/here/Documents/swirl/CMakeLists.txtC
+A
+?com.android.build.gradle.internal.cxx.io.EncodedFileFingerPrint	éÙƒ¦Å3æe —·Ñ…Å3w
+u
+s/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/additional_project_files.txt	éÙƒ¦Å3ßÛ ¯¥ø‹Å3t
+r
+p/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/android_gradle_build.json	éÙƒ¦Å3Õ1 °¥ø‹Å3y
+w
+u/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/android_gradle_build_mini.json	éÙƒ¦Å3®- ˜¦ø‹Å3f
+d
+b/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/build.ninja	éÙƒ¦Å3§´ •¥ø‹Å3j
+h
+f/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/build.ninja.txt	éÙƒ¦Å3o
+m
+k/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/build_file_index.txt	éÙƒ¦Å3£ š¦ø‹Å3p
+n
+l/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/compile_commands.json	éÙƒ¦Å3	¿æ	 •¥ø‹Å3t
+r
+p/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/compile_commands.json.bin	éÙƒ¦Å3
+­« •¥ø‹Å3z
+x
+v/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/metadata_generation_command.txt	éÙƒ¦Å3ƒ
+ š¦ø‹Å3m
+k
+i/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/prefab_config.json	éÙƒ¦Å3( š¦ø‹Å3r
+p
+n/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/symbol_folder_index.txt	éÙƒ¦Å3m š¦ø‹Å3B
+@
+>/home/here/Documents/swirl/cmake/EnableCFlagsIfSupported.cmake	éÙƒ¦Å3Ô ÔÃÂ…Å3<
+:
+8/home/here/Documents/swirl/cmake/FilesystemSupport.cmake	éÙƒ¦Å3³
+ ÔÃÂ…Å3?
+=
+;/home/here/Documents/swirl/cmake/GenerateExportHeader.cmake	éÙƒ¦Å3±z ÔÃÂ…Å3A
+?
+=/home/here/Documents/swirl/cmake/GeneratePkgConfigFiles.cmake	éÙƒ¦Å3” ÔÃÂ…Å3B
+@
+>/home/here/Documents/swirl/cmake/GenerateShaderResources.cmake	éÙƒ¦Å3‰ ÔÃÂ…Å35
+3
+1/home/here/Documents/swirl/cmake/VCSVersion.cmake	éÙƒ¦Å3Œ ÔÃÂ…Å3:
+8
+6/home/here/Documents/swirl/cmake/exportheader.cmake.in	éÙƒ¦Å3Ì ÔÃÂ…Å3:
+8
+6/home/here/Documents/swirl/cmake/gles/FindOpenGL.cmake	éÙƒ¦Å3Ì ÔÃÂ…Å30
+.
+,/home/here/Documents/swirl/config.h.cmake.in	éÙƒ¦Å3¨ ÔÃÂ…Å3-
++
+)/home/here/Documents/swirl/features.cmake	éÙƒ¦Å3Ó äÃÂ…Å35
+3
+1/home/here/Documents/swirl/presets/CMakeLists.txt	éÙƒ¦Å3 äÃÂ…Å31
+/
+-/home/here/Documents/swirl/src/CMakeLists.txt	éÙƒ¦Å3° êÎÑ…Å35
+3
+1/home/here/Documents/swirl/src/api/CMakeLists.txt	éÙƒ¦Å3ù æÃÂ…Å3C
+A
+?/home/here/Documents/swirl/src/libprojectM/Audio/CMakeLists.txt	éÙƒ¦Å3† æÃÂ…Å3=
+;
+9/home/here/Documents/swirl/src/libprojectM/CMakeLists.txt	éÙƒ¦Å3“L æÃÂ…Å3L
+J
+H/home/here/Documents/swirl/src/libprojectM/MilkdropPreset/CMakeLists.txt	éÙƒ¦Å3Ã( æÃÂ…Å3F
+D
+B/home/here/Documents/swirl/src/libprojectM/Renderer/CMakeLists.txt	éÙƒ¦Å3ğ èÃÂ…Å3I
+G
+E/home/here/Documents/swirl/src/libprojectM/UserSprites/CMakeLists.txt	éÙƒ¦Å3Ï èÃÂ…Å3G
+E
+C/home/here/Documents/swirl/src/libprojectM/projectM4Config.cmake.in	éÙƒ¦Å3 ç éÃÂ…Å3:
+8
+6/home/here/Documents/swirl/src/playlist/CMakeLists.txt	éÙƒ¦Å3!º1 éÃÂ…Å3L
+J
+H/home/here/Documents/swirl/src/playlist/projectM4PlaylistConfig.cmake.in	éÙƒ¦Å3"† éÃÂ…Å3>
+<
+:/home/here/Documents/swirl/src/quest-openxr/CMakeLists.txt	éÙƒ¦Å3#ú  çäõ‹Å3=
+;
+9/home/here/Documents/swirl/src/sdl-test-ui/CMakeLists.txt	éÙƒ¦Å3$· éÃÂ…Å34
+2
+0/home/here/Documents/swirl/vendor/CMakeLists.txt	éÙƒ¦Å3%¿ êÃÂ…Å38
+6
+4/home/here/Documents/swirl/vendor/glm/CMakeLists.txt	éÙƒ¦Å3&Ï ëÃÂ…Å3?
+=
+;/home/here/Documents/swirl/vendor/hlslparser/CMakeLists.txt	éÙƒ¦Å3'À îÃÂ…Å3B
+@
+>/home/here/Documents/swirl/vendor/projectm-eval/CMakeLists.txt	éÙƒ¦Å3(Æ ô¢Ì…Å3U
+S
+Q/home/here/Documents/swirl/vendor/projectm-eval/cmake/FastMathOptimizations.cmake	éÙƒ¦Å3)Ô	 ô¢Ì…Å3P
+N
+L/home/here/Documents/swirl/vendor/projectm-eval/projectm-eval/CMakeLists.txt	éÙƒ¦Å3*¨! õ¢Ì…Å3>
+<
+:/home/here/Documents/swirl/vendor/stb_image/CMakeLists.txt	éÙƒ¦Å3+§	 îÃÂ…Å3

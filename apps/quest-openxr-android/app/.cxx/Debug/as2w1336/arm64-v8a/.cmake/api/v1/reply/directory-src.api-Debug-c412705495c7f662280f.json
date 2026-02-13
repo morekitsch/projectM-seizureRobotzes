@@ -1,0 +1,56 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"src/api/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 74,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Devel",
+			"destination" : "include/projectM-4",
+			"paths" : 
+			[
+				"apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/api/include/projectM-4/projectM_export.h",
+				"apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/api/include/projectM-4/version.h",
+				"src/api/include/projectM-4/audio.h",
+				"src/api/include/projectM-4/callbacks.h",
+				"src/api/include/projectM-4/core.h",
+				"src/api/include/projectM-4/debug.h",
+				"src/api/include/projectM-4/logging.h",
+				"src/api/include/projectM-4/memory.h",
+				"src/api/include/projectM-4/parameters.h",
+				"src/api/include/projectM-4/projectM.h",
+				"src/api/include/projectM-4/render_opengl.h",
+				"src/api/include/projectM-4/touch.h",
+				"src/api/include/projectM-4/types.h",
+				"src/api/include/projectM-4/user_sprites.h"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "src/api",
+		"source" : "src/api"
+	}
+}

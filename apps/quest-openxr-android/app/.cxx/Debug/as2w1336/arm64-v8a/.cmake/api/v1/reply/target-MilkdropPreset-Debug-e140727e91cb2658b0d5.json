@@ -1,0 +1,1171 @@
+{
+	"artifacts" : 
+	[
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./MilkdropStaticShaders.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./BlurTexture.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Border.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./CustomShape.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./CustomWaveform.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./DarkenCenter.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./EvalLibMutex.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Factory.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Filters.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./FinalComposite.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./IdlePreset.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./MilkdropPreset.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./MilkdropShader.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./MotionVectors.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./PerFrameContext.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./PerPixelContext.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./PerPixelMesh.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./PresetFileParser.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./PresetState.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./ShapePerFrameContext.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./VideoEcho.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveform.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./WaveformPerFrameContext.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./WaveformPerPointContext.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/CenteredSpiro.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Circle.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/DerivativeLine.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/DoubleLine.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/ExplosiveHash.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Factory.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Line.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/LineBase.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077Wave11.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077Wave9.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077WaveFlower.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077WaveLasso.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077WaveSkewed.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077WaveStar.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/Milkdrop2077WaveX.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/SpectrumLine.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/WaveformMath.cpp.o"
+		},
+		{
+			"path" : "src/libprojectM/MilkdropPreset/CMakeFiles/MilkdropPreset.dir/./Waveforms/XYOscillationSpiral.cpp.o"
+		}
+	],
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"target_link_libraries",
+			"add_compile_options",
+			"enable_cflags_if_supported",
+			"include",
+			"add_compile_definitions",
+			"target_compile_definitions",
+			"include_directories",
+			"target_include_directories"
+		],
+		"files" : 
+		[
+			"src/libprojectM/MilkdropPreset/CMakeLists.txt",
+			"cmake/EnableCFlagsIfSupported.cmake",
+			"features.cmake",
+			"CMakeLists.txt",
+			"src/libprojectM/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 36,
+				"parent" : 0
+			},
+			{
+				"command" : 1,
+				"file" : 0,
+				"line" : 136,
+				"parent" : 0
+			},
+			{
+				"file" : 3
+			},
+			{
+				"command" : 4,
+				"file" : 3,
+				"line" : 234,
+				"parent" : 3
+			},
+			{
+				"file" : 2,
+				"parent" : 4
+			},
+			{
+				"command" : 3,
+				"file" : 2,
+				"line" : 9,
+				"parent" : 5
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 16,
+				"parent" : 6
+			},
+			{
+				"file" : 4
+			},
+			{
+				"command" : 5,
+				"file" : 4,
+				"line" : 1,
+				"parent" : 16
+			},
+			{
+				"command" : 5,
+				"file" : 2,
+				"line" : 4,
+				"parent" : 5
+			},
+			{
+				"command" : 5,
+				"file" : 3,
+				"line" : 205,
+				"parent" : 3
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 153,
+				"parent" : 0
+			},
+			{
+				"command" : 7,
+				"file" : 2,
+				"line" : 34,
+				"parent" : 5
+			},
+			{
+				"command" : 8,
+				"file" : 0,
+				"line" : 128,
+				"parent" : 0
+			}
+		]
+	},
+	"compileGroups" : 
+	[
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++14 -fno-limit-debug-info  -fPIC -fvisibility=hidden -fvisibility-inlines-hidden   -include config.h"
+				},
+				{
+					"backtrace" : 7,
+					"fragment" : "-Wpedantic"
+				},
+				{
+					"backtrace" : 8,
+					"fragment" : "-Wextra"
+				},
+				{
+					"backtrace" : 9,
+					"fragment" : "-Wall"
+				},
+				{
+					"backtrace" : 10,
+					"fragment" : "-Wchar-subscripts"
+				},
+				{
+					"backtrace" : 11,
+					"fragment" : "-Wformat-security"
+				},
+				{
+					"backtrace" : 12,
+					"fragment" : "-Wpointer-arith"
+				},
+				{
+					"backtrace" : 13,
+					"fragment" : "-Wshadow"
+				},
+				{
+					"backtrace" : 14,
+					"fragment" : "-Wsign-compare"
+				},
+				{
+					"backtrace" : 15,
+					"fragment" : "-Wtype-limits"
+				},
+				{
+					"fragment" : "-std=gnu++17"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 17,
+					"define" : "DATADIR_PATH=\"\""
+				},
+				{
+					"backtrace" : 18,
+					"define" : "DEBUG"
+				},
+				{
+					"backtrace" : 19,
+					"define" : "ENABLE_DEBUG_LOGGING"
+				},
+				{
+					"backtrace" : 20,
+					"define" : "PROJECTM_CXX_STATIC_DEFINE"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 21,
+					"path" : "/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/include"
+				},
+				{
+					"backtrace" : 22,
+					"path" : "/home/here/Documents/swirl/src/libprojectM/MilkdropPreset/.."
+				},
+				{
+					"backtrace" : 22,
+					"path" : "/home/here/Documents/swirl/src/libprojectM/MilkdropPreset"
+				},
+				{
+					"backtrace" : 22,
+					"path" : "/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/libprojectM/MilkdropPreset"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/vendor/projectm-eval/projectm-eval/.."
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/vendor/projectm-eval/projectm-eval/api"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/src/api/include"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/api/include"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/vendor/hlslparser/src"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/src"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/here/Documents/swirl/vendor/glm/.."
+				}
+			],
+			"language" : "CXX",
+			"languageStandard" : 
+			{
+				"backtraces" : 
+				[
+					1
+				],
+				"standard" : "17"
+			},
+			"sourceIndexes" : 
+			[
+				12,
+				14,
+				16,
+				19,
+				21,
+				23,
+				25,
+				26,
+				28,
+				30,
+				32,
+				34,
+				37,
+				41,
+				43,
+				45,
+				47,
+				49,
+				51,
+				53,
+				55,
+				57,
+				60,
+				62,
+				64,
+				66,
+				68,
+				70,
+				72,
+				74,
+				76,
+				78,
+				80,
+				82,
+				84,
+				86,
+				88,
+				90,
+				92,
+				94,
+				96,
+				98
+			],
+			"sysroot" : 
+			{
+				"path" : "/home/here/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+			}
+		}
+	],
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 2,
+			"id" : "glm::@1771e774e4950c903856"
+		},
+		{
+			"backtrace" : 2,
+			"id" : "hlslparser::@38b14576f9409969075c"
+		},
+		{
+			"backtrace" : 2,
+			"id" : "projectM_eval::@49d0bae02d017bb34036"
+		},
+		{
+			"backtrace" : 2,
+			"id" : "projectM_api::@f0e24b7f04f99860965c"
+		}
+	],
+	"folder" : 
+	{
+		"name" : "libprojectM"
+	},
+	"id" : "MilkdropPreset::@6684487e00f91966ae68",
+	"name" : "MilkdropPreset",
+	"paths" : 
+	{
+		"build" : "src/libprojectM/MilkdropPreset",
+		"source" : "src/libprojectM/MilkdropPreset"
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "",
+			"sourceIndexes" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8,
+				9,
+				10,
+				11
+			]
+		},
+		{
+			"name" : "Source Files",
+			"sourceIndexes" : 
+			[
+				12,
+				14,
+				16,
+				19,
+				21,
+				23,
+				25,
+				26,
+				28,
+				30,
+				32,
+				34,
+				37,
+				41,
+				43,
+				45,
+				47,
+				49,
+				51,
+				53,
+				55,
+				57,
+				60,
+				62,
+				64,
+				66,
+				68,
+				70,
+				72,
+				74,
+				76,
+				78,
+				80,
+				82,
+				84,
+				86,
+				88,
+				90,
+				92,
+				94,
+				96,
+				98
+			]
+		},
+		{
+			"name" : "Header Files",
+			"sourceIndexes" : 
+			[
+				13,
+				15,
+				17,
+				18,
+				20,
+				22,
+				24,
+				27,
+				29,
+				31,
+				33,
+				35,
+				36,
+				38,
+				39,
+				40,
+				42,
+				44,
+				46,
+				48,
+				50,
+				52,
+				54,
+				56,
+				58,
+				59,
+				61,
+				63,
+				65,
+				67,
+				69,
+				71,
+				73,
+				75,
+				77,
+				79,
+				81,
+				83,
+				85,
+				87,
+				89,
+				91,
+				93,
+				95,
+				97,
+				99
+			]
+		},
+		{
+			"name" : "CMake Rules",
+			"sourceIndexes" : 
+			[
+				100
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/Blur1FragmentShaderGlsl330.frag",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/Blur2FragmentShaderGlsl330.frag",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/BlurVertexShaderGlsl330.vert",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/PresetCompVertexShaderGlsl330.vert",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/PresetMotionVectorsVertexShaderGlsl330.vert",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/PresetShaderHeaderGlsl330.inc",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/PresetWarpFragmentShaderGlsl330.frag",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/PresetWarpVertexShaderGlsl330.vert",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/TexturedDrawFragmentShaderGlsl330.frag",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/TexturedDrawVertexShaderGlsl330.vert",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/UntexturedDrawFragmentShaderGlsl330.frag",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Shaders/UntexturedDrawVertexShaderGlsl330.vert",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"isGenerated" : true,
+			"path" : "apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/libprojectM/MilkdropPreset/MilkdropStaticShaders.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"isGenerated" : true,
+			"path" : "apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/libprojectM/MilkdropPreset/MilkdropStaticShaders.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/BlurTexture.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/BlurTexture.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Border.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Border.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Constants.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/CustomShape.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/CustomShape.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/CustomWaveform.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/CustomWaveform.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/DarkenCenter.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/DarkenCenter.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/EvalLibMutex.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Factory.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Factory.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Filters.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Filters.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/FinalComposite.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/FinalComposite.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/IdlePreset.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/IdlePreset.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropPreset.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropPreset.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropPresetExceptions.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropShader.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropShader.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropStaticShaders.cpp.in",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/MilkdropStaticShaders.hpp.in",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/MotionVectors.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/MotionVectors.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/PerFrameContext.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/PerFrameContext.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/PerPixelContext.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/PerPixelContext.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/PerPixelMesh.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/PerPixelMesh.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/PresetFileParser.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/PresetFileParser.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/PresetState.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/PresetState.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/ShapePerFrameContext.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/ShapePerFrameContext.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/VideoEcho.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/VideoEcho.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveform.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveform.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/WaveformMode.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/WaveformPerFrameContext.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/WaveformPerFrameContext.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/WaveformPerPointContext.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/WaveformPerPointContext.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/CenteredSpiro.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/CenteredSpiro.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Circle.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Circle.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/DerivativeLine.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/DerivativeLine.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/DoubleLine.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/DoubleLine.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/ExplosiveHash.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/ExplosiveHash.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Factory.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Factory.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Line.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Line.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/LineBase.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/LineBase.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077Wave11.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077Wave11.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077Wave9.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077Wave9.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveFlower.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveFlower.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveLasso.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveLasso.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveSkewed.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveSkewed.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveStar.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveStar.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveX.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/Milkdrop2077WaveX.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/SpectrumLine.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/SpectrumLine.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/WaveformMath.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/WaveformMath.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/XYOscillationSpiral.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "src/libprojectM/MilkdropPreset/Waveforms/XYOscillationSpiral.hpp",
+			"sourceGroupIndex" : 2
+		},
+		{
+			"backtrace" : 0,
+			"isGenerated" : true,
+			"path" : "apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/libprojectM/MilkdropPreset/MilkdropStaticShaders.cpp.rule",
+			"sourceGroupIndex" : 3
+		}
+	],
+	"type" : "OBJECT_LIBRARY"
+}

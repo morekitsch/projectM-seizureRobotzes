@@ -1,0 +1,128 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install",
+			"generate_pkg_config_files"
+		],
+		"files" : 
+		[
+			"src/playlist/CMakeLists.txt",
+			"cmake/GeneratePkgConfigFiles.cmake"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 118,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 143,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 150,
+				"parent" : 0
+			},
+			{
+				"command" : 1,
+				"file" : 0,
+				"line" : 175,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 1,
+				"line" : 43,
+				"parent" : 4
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Runtime",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"/home/here/Documents/swirl/apps/quest-openxr-android/app/build/intermediates/cxx/Debug/as2w1336/obj/arm64-v8a/libprojectM-4-playlistd.so"
+			],
+			"targetId" : "projectM_playlist::@8c4afb0417e1306992b6",
+			"targetIndex" : 12,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Devel",
+			"destination" : "include/projectM-4",
+			"paths" : 
+			[
+				"apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/playlist/include/projectM-4/projectM_playlist_export.h",
+				"src/playlist/api/projectM-4/playlist.h",
+				"src/playlist/api/projectM-4/playlist_callbacks.h",
+				"src/playlist/api/projectM-4/playlist_core.h",
+				"src/playlist/api/projectM-4/playlist_filter.h",
+				"src/playlist/api/projectM-4/playlist_items.h",
+				"src/playlist/api/projectM-4/playlist_memory.h",
+				"src/playlist/api/projectM-4/playlist_playback.h",
+				"src/playlist/api/projectM-4/playlist_types.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Devel",
+			"destination" : "lib/cmake/projectM4Playlist",
+			"paths" : 
+			[
+				"apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/playlist/libprojectMPlaylist/projectM4PlaylistConfigVersion.cmake",
+				"apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/playlist/libprojectMPlaylist/projectM4PlaylistConfig.cmake"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Devel",
+			"destination" : "lib/cmake/projectM4Playlist",
+			"exportName" : "libprojectMPlaylist",
+			"exportTargets" : 
+			[
+				{
+					"id" : "projectM_playlist::@8c4afb0417e1306992b6",
+					"index" : 12
+				}
+			],
+			"paths" : 
+			[
+				"src/playlist/CMakeFiles/Export/lib/cmake/projectM4Playlist/projectM4PlaylistTargets.cmake"
+			],
+			"type" : "export"
+		},
+		{
+			"backtrace" : 5,
+			"component" : "Devel",
+			"destination" : "lib/pkgconfig",
+			"paths" : 
+			[
+				"apps/quest-openxr-android/app/.cxx/Debug/as2w1336/arm64-v8a/src/playlist/projectM-4-playlist-debug.pc"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "src/playlist",
+		"source" : "src/playlist"
+	}
+}
