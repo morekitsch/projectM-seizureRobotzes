@@ -8,7 +8,9 @@ Status: integration prototype (actively evolving), not a polished store-ready ap
 
 ## Photosensitivity warning
 
-projectM visuals can include high-contrast, rapidly changing patterns and flashes. If you are sensitive to flashing lights, use caution and stop immediately if you feel unwell. LIKE SERIOUSLY: If you use this you will be essentially swimming in flashing patterns.
+projectM visuals can include high-contrast, rapidly changing patterns and flashes. If you are sensitive to flashing lights, use caution and stop immediately if you feel unwell. 
+
+***LIKE SERIOUSLY: If you use this you will be essentially swimming in flashing patterns.***
 
 ## What is in this fork
 
