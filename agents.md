@@ -1,52 +1,52 @@
-# Agents Context + TODO Tracker
+# Agents Context + Handoff Tracker
 
-Last updated: 2026-02-12
+Last updated: 2026-02-13
 
 ## Current Context
-- Reference base commit: `d79a017c5263bec1933799f7b260c3ca2711ca52`
-- Latest commits:
-  - `2f4085b18` `quest-openxr: improve controller HUD usability and build wiring`
-  - `be17ec469` `quest-openxr: improve HUD text layout and prevent label overlap`
-- Branch status: `master` is ahead of `origin/master` by 3 commits.
-- Device status: Quest 3 connected over `adb`; `installDebug` succeeded and `com.projectm.questxr` is installed.
-- Working file for HUD behavior: `src/quest-openxr/main.cpp`
+- Current `HEAD`: `3aa5011bd` (`chore: full workspace checkpoint before major changes`)
+- Functional XR input/UI commit: `cebeef4ca` (`quest-openxr: add hand-tracking HUD interaction and simplify menu`)
+- Branch status: `master` is ahead of `origin/master` by 8 commits.
+- Submodule pointer: `vendor/projectm-eval` -> `a1611be` (`projectm-eval: update scanner artifacts`).
+- Device status: Quest 3 connected over `adb`; latest `installDebug` succeeded and `com.projectm.questxr` is installed.
 
-## Recent Work Completed
-- Added Meta Touch Plus/Pro + Oculus Touch binding suggestions.
-- Moved previous-track to `L3` and trigger actions to value-threshold input.
-- Added in-headset HUD text layer with status lines and control labels.
-- Added auto-hide HUD behavior and visibility extension on interaction/state change.
-- Added per-button feedback (`INPUT: ...`) and stronger button flash cues.
-- Fixed top clipping by tuning HUD placement and panel mask.
-- Improved readability (closer/larger panel, stronger text contrast).
-- Reduced crowding and prevented text overlap with fit-to-width + ellipsis logic.
-- Built and installed debug APK to Quest after each fix iteration.
+## What Was Completed
+- Added hand-tracking interaction path in OpenXR using `XR_EXT_hand_interaction` when available.
+- Added aim pose action + per-hand action spaces, with HUD ray hit-testing and tile activation by trigger/pinch.
+- Kept standard controller mechanisms and legacy direct button mappings active as fallback.
+- Simplified/decluttered HUD text labels and added in-HUD aim/select guidance.
+- Added manifest support for Quest hand tracking:
+  - `oculus.software.handtracking` feature
+  - `com.oculus.permission.HAND_TRACKING`
+  - hand-tracking metadata (`V2.0`, `HIGH`)
+- Updated Quest README to document controller + hand interaction behavior.
+- Verified build/deploy flow:
+  - `:app:assembleDebug` passed
+  - `:app:installDebug` passed
 
 ## Active TODOs
-- [ ] Validate auto-skip thresholds (`min_fps`, `bad_seconds`, `cooldown_seconds`) against real slow presets on Quest.
+- [ ] Do in-headset QA pass for hand tracking:
+  - Verify aim alignment and pinch reliability
+  - Verify HUD show/hide behavior when hidden then triggered
+  - Confirm controller ray + trigger and hand aim + pinch both work in the same session
+- [ ] Re-validate auto-skip thresholds (`min_fps`, `bad_seconds`, `cooldown_seconds`) on known slow presets.
+- [ ] Decide whether to keep or later prune large generated artifacts captured in checkpoint commit `3aa5011bd`.
 
 ## Backlog
 - [ ] Optional: clean up OpenXR struct `next` initializer warnings (non-blocking).
+- [ ] Optional: if needed later, split large checkpoint commit into cleaner logical history before upstreaming.
 
-## Done
-- [x] Validate controller actions (`A/B/X/Y/L3/LT/RT`) are recognized on-device.
-- [x] Validate menu panel is no longer cut off in-headset.
-- [x] Add clear button-press feedback and improved flash response.
-- [x] Improve text readability and remove visible label bleeding/overlap.
-- [x] Commit working state for usability + layout passes.
-- [x] Apply HUD polish notes captured through commit `be17ec469`.
-- [x] Set track/source HUD policy to sanitized basename for URL/path labels.
-- [x] Add runtime debug properties for HUD placement/scale and on-device tuning without rebuild.
-- [x] Add performance guard: detect sustained low FPS, auto-mark slow presets, and skip marked presets.
-- [x] Add HUD debug visibility toggle (`debug.projectm.quest.hud.enabled`).
-
-## Notes
-- Current package on device: `com.projectm.questxr`.
-- Latest tested HUD/layout state is in commit `be17ec469`.
-- Local untracked artifacts exist (`agents.txt`, `logs/`, Gradle wrapper/cache files) and were intentionally not committed.
+## Superseded / Closed Out-of-Date Notes
+- `be17ec469` is no longer the latest tested HUD state; replaced by `cebeef4ca`.
+- Previous note about "local untracked artifacts intentionally not committed" is out of date; those artifacts were included in `3aa5011bd`.
+- Previous resume target `be17ec469` is superseded by `3aa5011bd` (or `cebeef4ca` for functional-only baseline).
 
 ## Resume Checklist
-1. Start from `be17ec469`.
-2. Build/install with `./gradlew installDebug` in `apps/quest-openxr-android`.
-3. Validate performance guard behavior on known heavy presets and tune thresholds via `adb setprop`.
-4. Commit each validated follow-up in small, isolated commits.
+1. Choose starting point:
+   - `3aa5011bd` for exact full workspace checkpoint.
+   - `cebeef4ca` for hand-tracking/HUD functional baseline without the checkpoint payload.
+2. Build/install from `apps/quest-openxr-android` with `./gradlew :app:installDebug`.
+3. Run in-headset input matrix:
+   - Controller ray + trigger on HUD tiles
+   - Hand aim + pinch on same HUD tiles
+   - Legacy direct controller buttons (`A/B/X/Y/L3/R3/LT/RT`)
+4. Proceed with major changes from the selected baseline.
