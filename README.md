@@ -1,261 +1,164 @@
-[![Windows Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_windows.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_windows.yml)
-[![Linux Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_linux.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_linux.yml)
-[![macOS Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_osx.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_osx.yml)
-[![Emscripten Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_emscripten.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_emscripten.yml)
-[![Android Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_android.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_android.yml)
+# projectM SeizureRobotzes
 
-![Discord Shield](https://discordapp.com/api/guilds/737206408482914387/widget.png?style=shield) [Chat with us on Discord](https://discord.gg/N9DyQfCH4j)
+`projectM-seizureRobotzes` is a fork of [projectM](https://github.com/projectM-visualizer/projectm) focused on a playable Meta Quest OpenXR experience.
 
-![Logo](https://github.com/projectM-visualizer/projectm/raw/master/docs/web/logo.png)
+This repo keeps the upstream `libprojectM` codebase and adds an experimental Quest host app with in-headset controls, audio input switching, and runtime tuning.
 
-## projectM - The most advanced open-source music visualizer
+Status: integration prototype (actively evolving), not a polished store-ready app.
 
-**Experience psychedelic and mesmerizing visuals by transforming music into equations that render into a limitless array
-of user-contributed visualizations.**
+## Photosensitivity warning
 
-projectM is an open-source project that reimplements the
-esteemed [Winamp Milkdrop](https://en.wikipedia.org/wiki/MilkDrop) by Geiss in a more modern, cross-platform reusable
-library.
+projectM visuals can include high-contrast, rapidly changing patterns and flashes. If you are sensitive to flashing lights, use caution and stop immediately if you feel unwell. LIKE SERIOUSLY: If you use this you will be essentially swimming in flashing patterns.
 
-Its purpose in life is to read an audio input and to produce mesmerizing visuals, detecting tempo, and rendering
-advanced equations into a limitless array of user-contributed visualizations.
+## What is in this fork
 
-### Important: This repository only contains libprojectM for use in application development!
+- Meta Quest OpenXR `NativeActivity` app (`apps/quest-openxr-android`)
+- Full-sphere and front-dome projection modes
+- In-headset HUD with controller and hand-touch interaction
+- Audio mode switching:
+  - global output capture
+  - Internal media player
+  - microphone mode with beat-assist fallback
+  - synthetic fallback
+- Preset pack downloads in-app (`presets-en-d` by default, optional Cream pack)
+- Runtime performance controls:
+  - slow preset auto-marking/skip
+  - SGSR upscaling toggle
+  - adaptive render scaling
 
-This repository now only contains the projectM shared/static library. All frontends, plug-ins and other tools were
-outsourced into separate repositories. If you're not a developer and just look for a download to run projectM visuals on
-your machine or device, please use one of the links listed below. The releases section in this repository only contains
-source-code and binary releases of the projectM development libraries and headers, which aren't useful for end users.
+## Quick start (Quest app)
 
-### End-User Applications
+### 1. Prerequisites
 
-**Important**: projectM is currently undergoing heavy development, so the available end-user frontends are either
-outdated or unavailable. We've released a few development previews, which are not feature-complete and may have bugs. As
-soon as we've finished the current modernization of libprojectM, we'll release new and tested versions of most of the
-frontends listed below, while we may remove or replace some of those which are no longer maintained by their original
-developers.
+- Android Studio with Android SDK Platform 34
+- Android NDK installed (this project is currently configured and tested with NDK 27.x)
+- OpenXR SDK for Android installed locally
+- Quest headset in developer mode
+- `adb` available on your host machine
 
-##### Windows
+### 2. Configure OpenXR SDK path
 
-- Standalone (currently only available as
-  a [development preview](https://github.com/kblaschke/frontend-sdl2/releases/tag/2.0-windows-pre3))
-- [Steam](https://store.steampowered.com/app/1358800/projectM_Music_Visualizer/) (Same as standalone development
-  preview)
+Use one of the following:
 
-#### macOS
+```bash
+export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+```
 
-- Standalone
-  - [C++ app development preview](https://github.com/kblaschke/frontend-sdl2/releases/tag/2.0-macos-pre1)
-  - [Rust app development preview (signed)](https://github.com/projectM-visualizer/frontend-sdl-rust/releases/tag/v0.1.0)
-- [Steam](https://store.steampowered.com/app/1358800/projectM_Music_Visualizer/) (Old 3.1.12 release)
-- Music.app Plugin  (currently only available as an
-  _unsigned_ [development preview](https://github.com/kblaschke/frontend-music-plug-in/releases/tag/v3.0-pre1))
-- [Brew](https://formulae.brew.sh/formula/projectm) (Old 3.1.12 release)
+Or set `apps/quest-openxr-android/local.properties`:
 
-#### Linux
+```properties
+openxr.sdk=/path/to/openxr-sdk-install-prefix
+```
 
-- Standalone (currently only available as
-  a [development preview](https://github.com/kblaschke/frontend-sdl2/releases/tag/2.0-linux-pre2) for Ubuntu 22.04 and
-  compatible distributions)
-- [Steam](https://store.steampowered.com/app/1358800/projectM_Music_Visualizer/) (Same as standalone development
-  preview)
+### 3. Build + install debug APK
 
-Or check your distribution's package manager for a binary release. If it is outdated, please contact the package
-maintainer, as the projectM development team does not maintain any of the distribution-specific packages.
+```bash
+cd apps/quest-openxr-android
+./gradlew :app:installDebug
+```
 
-#### Android
+### 4. Launch on headset
 
-- [Google Play](https://play.google.com/store/apps/details?id=com.psperl.prjM)
+```bash
+adb shell am start -n com.projectm.questxr/.QuestNativeActivity
+```
 
-**Note**: Both the free and paid apps plus the Android TV app are _not_ created or supported by the projectM developers!
-If you have technical troubles or other inquiries, please contact the app author via the means provided in the Play
-Store. Any bug reports in the projectM issue tracker regarding the apps will be closed immediately.
+## In-headset controls
 
-#### Xbox / Windows Phone
+Primary interaction:
 
-- [Windows Store](https://www.microsoft.com/store/apps/9NDCVH0VCWJN) (Old 3.1.12 release)
+- Touch HUD tiles directly with tracked hands
+- Aim + pinch (hands) or ray + trigger (controllers) also work
 
-#### Other
+Controller bindings:
 
-Source code and other resources, mostly aimed at developers.
+- Right `A`: next preset
+- Left `X`: previous preset
+- Left `Y`: play/pause media fallback
+- Right `B`: next media track
+- Left thumbstick click (`L3`): previous media track
+- Right thumbstick click (`R3`): cycle audio input source
+- Right trigger (off-HUD): toggle sphere/dome projection
+- Left trigger (off-HUD): request optional Cream preset download + rescan
 
-- [Library source code](https://github.com/projectM-visualizer/projectm/) (this repository)
-- [GStreamer plugin](https://github.com/projectM-visualizer/gst-projectm/)
-- [Qt5](https://www.qt.io/) based [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/) and JACK desktop
-  apps [as source code for Linux](https://github.com/projectM-visualizer/frontend-qt), currently broken and needs some
-  updating (help wanted!).
-- [ALSA, XMMS, Winamp, JACK](https://sourceforge.net/projects/projectm/files/) (legacy 2.x sources for historic
-  purposes, unmaintained since 2012)
+## Runtime tuning (no rebuild)
 
-### Discord chat
+Properties are polled at runtime (about once per second):
 
-[Chat with us on Discord!](https://discord.gg/N9DyQfCH4j)
+```bash
+# Projection mode
+adb shell setprop debug.projectm.quest.projection dome
+adb shell setprop debug.projectm.quest.projection sphere
 
-### Click For Demo Videos
+# HUD tuning
+adb shell setprop debug.projectm.quest.hud.enabled 1
+adb shell setprop debug.projectm.quest.hud.distance 0.72
+adb shell setprop debug.projectm.quest.hud.v_offset -0.27
+adb shell setprop debug.projectm.quest.hud.scale 1.0
 
-<a href="https://www.youtube.com/watch?v=jJmLQGhYWys&list=PLFLkbObX4o6TK1jGL6pm1wMwvq2FXnpYJ">
-  <img src="https://i3.ytimg.com/vi/QlfqpVvo4zM/maxresdefault.jpg" width="800" alt="4k ProjectM render demo playlist" />
-</a>
+# Performance + render scaling
+adb shell setprop debug.projectm.quest.perf.sgsr 1
+adb shell setprop debug.projectm.quest.perf.render_scale 0.85
+adb shell setprop debug.projectm.quest.perf.auto_scale 1
+adb shell setprop debug.projectm.quest.perf.auto_scale.min_render_scale 0.60
+adb shell setprop debug.projectm.quest.perf.auto_scale.step 0.04
+adb shell setprop debug.projectm.quest.perf.auto_scale.down_fps 66
+adb shell setprop debug.projectm.quest.perf.auto_scale.up_fps 72
+adb shell setprop debug.projectm.quest.perf.auto_scale.hold_seconds 1.0
+adb shell setprop debug.projectm.quest.perf.auto_scale.cooldown_seconds 2.5
 
-### Presets
+# Slow preset handling
+adb shell setprop debug.projectm.quest.perf.auto_skip 1
+adb shell setprop debug.projectm.quest.perf.skip_marked 1
+adb shell setprop debug.projectm.quest.perf.min_fps 42
+adb shell setprop debug.projectm.quest.perf.bad_seconds 2.0
+adb shell setprop debug.projectm.quest.perf.cooldown_seconds 8.0
 
-The preset files define the visualizations via pixel shaders and Milkdrop-style equations and parameters.
+# Clear all slow-preset marks
+adb shell setprop debug.projectm.quest.perf.clear_marked 1
+adb shell setprop debug.projectm.quest.perf.clear_marked 0
+```
 
-The projectM library does not ship with any presets. The frontends come with varying preset packs which can be found in
-separate repositories in the projectM repository list:
+Optional Cream preset pack enable flag:
 
-- [Base Milkdrop texture pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack) - Recommended for
-  use with _any_ preset pack!
-- [Cream of the Crop Pack](https://github.com/projectM-visualizer/presets-cream-of-the-crop) - A collection of about 10K
-  presets compiled by Jason Fletcher. Currently, projectM's default preset pack.
-- [Classic projectM Presets](https://github.com/projectM-visualizer/presets-projectm-classic) - A bit over 4K presets
-  shipped with previous versions of projectM.
-- [Milkdrop 2 Presets](https://github.com/projectM-visualizer/presets-milkdrop-original) - The original preset
-  collection shipped with Milkdrop and Winamp.
-- [En D Presets](https://github.com/projectM-visualizer/presets-en-d) - About 50 presets created by "En D".
+```bash
+adb shell "mkdir -p /sdcard/Android/data/com.projectm.questxr/files && touch /sdcard/Android/data/com.projectm.questxr/files/enable_cream_download.flag"
+```
 
-Included with projectM are the bltc201, Milkdrop 1 and 2, projectM, tryptonaut and yin collections. You can grab these
-presets [here](http://spiegelmc.com/pub/projectm_presets.zip).
+## Logs and troubleshooting
 
-You can also download an enormous 130k+ presets from the MegaPack [here](https://drive.google.com/file/d/1DlszoqMG-pc5v1Bo9x4NhemGPiwT-0pv/view) (4.08GB zipped, incl. textures).
+- Live logs:
 
-### Also Featured In
+```bash
+adb logcat -s projectM-QuestXR
+```
 
-[![Kodi](docs/web/kodi.png) Kodi (formerly XBMC)](https://kodi.tv/)
+- Optional rotating log capture helper in this repo:
 
-[![Helix](docs/web/helix.jpg) Helix](https://web.archive.org/web/20180628174410/http://ghostfiregames.com/helixhome.html)
+```bash
+./scripts/quest_logcat_capture.sh start
+./scripts/quest_logcat_capture.sh status
+./scripts/quest_logcat_capture.sh stop
+```
 
-[![Silverjuke](docs/web/silverjuke.png) Silverjuke (FOSS Jukebox)](https://www.silverjuke.net)
+- If Gradle fails with OpenXR path errors, set `OPENXR_SDK` or `openxr.sdk` as shown above.
 
-[![VLC Media Player](docs/web/vlc.png) VLC Media Player (AKA VideoLAN Client)](https://www.videolan.org/vlc/)
+## Building libprojectM (non-Quest)
 
-Reminder: These are all third-party integrations of libprojectM and not developed or supported by the projectM
-development team. Please report bugs in those applications to their respective developers.
+This fork still contains the full upstream `libprojectM` build system.
 
----
+- Quick start: `BUILDING.md`
+- Detailed CMake options: `BUILDING-cmake.md`
 
-## Screenshots
+## Upstream and licensing
 
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-08-25%20at%2012.31.20%20AM.png)
+- Upstream project: [projectM-visualizer/projectm](https://github.com/projectM-visualizer/projectm)
+- Main license text: `LICENSE.txt`
+- Historical licensing notes: `COPYING`
 
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-08-25%20at%2012.33.50%20AM.png)
+If you use this fork, please link back to upstream projectM and credit the original maintainers.
 
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-07-18%20at%202.14.41%20PM.png)
+## More docs
 
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-07-18%20at%202.13.53%20PM.png)
-
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-07-18%20at%202.15.36%20PM.png)
-
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-08-16%20at%204.49.32%20PM.png)
-
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-08-16%20at%204.50.37%20PM.png)
-
-![Screenshot](docs/web/projectM_screenshots/Screen%20Shot%202014-08-25%20at%2012.31.07%20AM.png)
-
----
-
-## Architecture
-
-- [Article](https://lwn.net/Articles/750152/)
-
-# Building from source
-
-See [BUILDING.md](BUILDING.md) and
-the [developer documentation in the wiki](https://github.com/projectM-visualizer/projectm/wiki/Building-libprojectM).
-
-# Using the library
-
-At its core projectM is a library, [libprojectM](src/libprojectM). This library is responsible for parsing presets,
-analyzing audio PCM data with beat detection and FFT, applying the preset to the audio feature data and rendering the
-resulting output with OpenGL. It can render to a dedicated OpenGL context or a texture.
-
-To get started using projectM in your own projects, please go to the wiki and read
-the [developer documentation](https://github.com/projectM-visualizer/projectm/wiki#integrating-projectm-into-applications)
-available there.
-
-There are some open-source applications that make use of libprojectM which can be found in
-the [projectM organization's repositories](https://github.com/projectM-visualizer) and elsewhere.
-
-## Experimental Meta Quest OpenXR host app
-
-This repository now also contains an experimental Android NativeActivity host app that targets Meta Quest via OpenXR.
-It renders projectM into an offscreen texture and projects it onto a surrounding sphere (or front dome mode), attempts
-global headset-audio capture with a media-player fallback path, supports automatic preset-pack downloads, and includes a
-basic in-headset controller HUD.
-
-Build scaffolding and setup notes are in:
-
-- [apps/quest-openxr-android/README.md](apps/quest-openxr-android/README.md)
-
----
-
-# See Also
-
-- [GStreamer plugin for offline rendering](https://github.com/projectM-visualizer/gst-projectm/)
-- [ProjectM Rust Crate](https://crates.io/crates/projectm)
-- [Milkdrop evaluation library](https://github.com/projectM-visualizer/projectm-eval)
-
----
-
-## Help
-
-Report issues on GitHub in the respective repositories:
-
-- [Rendering issues, crashes or the libprojectM core/API](https://github.com/projectM-visualizer/projectm/issues)
-- [Standalone SDL app](https://github.com/projectM-visualizer/frontend-sdl2/issues) (including the Steam release)
-- [Windows Store App](https://github.com/projectM-visualizer/frontend-uwp/issues)
-- [Apple Music plug-in](https://github.com/projectM-visualizer/frontend-music-plug-in/issues)
-- Issues regarding the **projectM Android apps in the Play Store**, please contact the app author via the Play Store. We
-  cannot help with any problems or requests.
-
-If unsure, post your issue in the
-main [libprojectM issue tracker](https://github.com/projectM-visualizer/projectm/issues).
-Please always check any existing issues if your problem has already been posted by another user. If so, add your logs
-and findings to the existing issue instead of opening a new ticket.
-
-## Get in contact with us
-
-[Chat with us on Discord.](https://discord.gg/N9DyQfCH4j)
-
-## Contribute to projectM
-
-If you would like to help improve this project, either with documentation, code, porting, hardware or anything else
-please let us know! We gladly accept pull requests and issues.
-
-Before starting to write code, please take your time to read
-the [contribution guidelines](https://github.com/projectM-visualizer/projectm/wiki#contributing-to-projectm) in our
-wiki.
-
-Come talk to the dev team on Discord.
-
-## Package Maintainers
-
-If you maintain packages of libprojectM, we are happy to work with you! Please note well:
-
-- The main focus of this project is libprojectM. It's a library that only really depends on OpenGL. The other
-  applications are more like examples and demos.
-- Many of the frontend applications are likely outdated and of less utility than the core library. If you desire to use
-  them or depend on them, please file an issue in the respective repository so we can help update them.
-- The "canonical" application for actually viewing the visualizations is
-  now [projectM-SDL](https://github.com/projectM-visualizer/frontend-sdl2), based on libSDL2 because it supports audio
-  input and is completely cross-platform.
-- If you like Rust, there is a [SDL3 rust frontend](https://github.com/projectM-visualizer/frontend-sdl-rust) in the works looking for contributors.
-- This is an open source project! If you don't like something, feel free to contribute improvements!
-- Yes, you are looking at the official version. This is not a fork.
-
-## Authors
-
-[Authors](https://github.com/projectM-visualizer/projectm/raw/master/AUTHORS.txt)
-
-## License
-
-The core projectM library is released under
-the [GNU Lesser General Public License 2.1](https://github.com/projectM-visualizer/projectm/raw/master/LICENSE.txt) to
-keep any changes open-sourced, but also enable the use of libprojectM in closed-source applications (as a shared
-library) as long as the license terms are adhered to. The up- and downstream projects may use different licenses -
-please check all parts of the software to be compatible with your specific project if you plan an integration.
-
-## Wiki
-
-More information for developers is available from
-the [projectM Wiki](https://github.com/projectM-visualizer/projectm/wiki).
+- Quest app integration notes: `apps/quest-openxr-android/README.md`
+- Core library build docs: `BUILDING.md`, `BUILDING-cmake.md`
