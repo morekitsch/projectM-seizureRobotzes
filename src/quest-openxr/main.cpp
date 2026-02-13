@@ -63,7 +63,7 @@ constexpr float kHudDistanceHandTracking = 0.55f;
 constexpr float kHudVerticalOffset = -0.27f;
 constexpr float kHudVerticalOffsetHandTracking = -0.08f;
 constexpr float kHudWidth = 0.68f;
-constexpr float kHudHeight = 0.34f;
+constexpr float kHudHeight = 0.36f;
 constexpr double kHudVisibleOnStartSeconds = 8.0;
 constexpr double kHudVisibleAfterInteractionSeconds = 6.0;
 constexpr double kHudVisibleAfterStatusChangeSeconds = 3.0;
@@ -102,10 +102,10 @@ struct HudRect {
     float maxV;
 };
 
-constexpr HudRect kHudRectPrevPreset{0.07f, 0.46f, 0.59f, 0.84f};
-constexpr HudRect kHudRectNextPreset{0.54f, 0.93f, 0.59f, 0.84f};
-constexpr HudRect kHudRectTogglePlay{0.07f, 0.46f, 0.30f, 0.55f};
-constexpr HudRect kHudRectNextTrack{0.54f, 0.93f, 0.30f, 0.55f};
+constexpr HudRect kHudRectPrevPreset{0.07f, 0.46f, 0.60f, 0.82f};
+constexpr HudRect kHudRectNextPreset{0.54f, 0.93f, 0.60f, 0.82f};
+constexpr HudRect kHudRectTogglePlay{0.07f, 0.46f, 0.30f, 0.52f};
+constexpr HudRect kHudRectNextTrack{0.54f, 0.93f, 0.30f, 0.52f};
 constexpr HudRect kHudRectPack{0.07f, 0.33f, 0.08f, 0.24f};
 constexpr HudRect kHudRectCenter{0.37f, 0.63f, 0.08f, 0.24f};
 constexpr HudRect kHudRectProjection{0.67f, 0.93f, 0.08f, 0.24f};
@@ -1563,7 +1563,6 @@ private:
             uniform vec4 uFlashRT;
             uniform vec4 uFlashLT;
             uniform vec4 uFlashMenu;
-            uniform vec4 uStatus;
             uniform vec4 uPointerLeft;
             uniform vec4 uPointerRight;
             uniform sampler2D uTextTexture;
@@ -1593,49 +1592,20 @@ private:
 
             void main() {
                 vec3 color = vec3(0.0);
-                float alpha = rectMask(vUv, vec2(0.015, 0.02), vec2(0.985, 0.985), 0.0035) * 0.62;
+                float alpha = rectMask(vUv, vec2(0.015, 0.02), vec2(0.985, 0.980), 0.0035) * 0.62;
                 if (alpha <= 0.001) {
                     discard;
                 }
 
                 color = vec3(0.08, 0.08, 0.10);
 
-                color = blendRect(color, vUv, vec2(0.07, 0.59), vec2(0.46, 0.84), vec3(0.14, 0.44, 0.87), 0.90 + uFlashX.x);
-                color = blendRect(color, vUv, vec2(0.54, 0.59), vec2(0.93, 0.84), vec3(0.93, 0.34, 0.26), 0.90 + uFlashA.x);
-                color = blendRect(color, vUv, vec2(0.07, 0.30), vec2(0.46, 0.55), vec3(0.18, 0.74, 0.38), 0.90 + uFlashY.x);
-                color = blendRect(color, vUv, vec2(0.54, 0.30), vec2(0.93, 0.55), vec3(0.91, 0.82, 0.28), 0.90 + uFlashB.x);
+                color = blendRect(color, vUv, vec2(0.07, 0.60), vec2(0.46, 0.82), vec3(0.14, 0.44, 0.87), 0.90 + uFlashX.x);
+                color = blendRect(color, vUv, vec2(0.54, 0.60), vec2(0.93, 0.82), vec3(0.93, 0.34, 0.26), 0.90 + uFlashA.x);
+                color = blendRect(color, vUv, vec2(0.07, 0.30), vec2(0.46, 0.52), vec3(0.18, 0.74, 0.38), 0.90 + uFlashY.x);
+                color = blendRect(color, vUv, vec2(0.54, 0.30), vec2(0.93, 0.52), vec3(0.91, 0.82, 0.28), 0.90 + uFlashB.x);
                 color = blendRect(color, vUv, vec2(0.07, 0.08), vec2(0.33, 0.24), vec3(0.58, 0.32, 0.86), 0.88 + uFlashLT.x);
                 color = blendRect(color, vUv, vec2(0.37, 0.08), vec2(0.63, 0.24), vec3(0.90, 0.54, 0.20), 0.88 + uFlashMenu.x);
                 color = blendRect(color, vUv, vec2(0.67, 0.08), vec2(0.93, 0.24), vec3(0.23, 0.72, 0.85), 0.88 + uFlashRT.x);
-
-                // Audio mode dots: synthetic, global, media, microphone
-                vec3 inactive = vec3(0.22, 0.22, 0.24);
-                vec3 synthColor = vec3(0.95, 0.65, 0.25);
-                vec3 globalColor = vec3(0.22, 0.86, 0.48);
-                vec3 mediaColor = vec3(0.24, 0.62, 0.92);
-                vec3 micColor = vec3(0.93, 0.44, 0.86);
-                float audioMode = uStatus.x;
-                float projMode = uStatus.y;
-                float playing = uStatus.z;
-
-                float synthMask = 1.0 - step(0.5, audioMode);
-                float globalMask = step(0.5, audioMode) * (1.0 - step(1.5, audioMode));
-                float mediaMask = step(1.5, audioMode) * (1.0 - step(2.5, audioMode));
-                float micMask = step(2.5, audioMode);
-
-                color = blendRect(color, vUv, vec2(0.09, 0.88), vec2(0.14, 0.93), mix(inactive, synthColor, synthMask), 1.0);
-                color = blendRect(color, vUv, vec2(0.16, 0.88), vec2(0.21, 0.93), mix(inactive, globalColor, globalMask), 1.0);
-                color = blendRect(color, vUv, vec2(0.23, 0.88), vec2(0.28, 0.93), mix(inactive, mediaColor, mediaMask), 1.0);
-                color = blendRect(color, vUv, vec2(0.30, 0.88), vec2(0.35, 0.93), mix(inactive, micColor, micMask), 1.0);
-
-                // Projection indicator
-                vec3 sphereColor = vec3(0.26, 0.72, 0.90);
-                vec3 domeColor = vec3(0.76, 0.34, 0.90);
-                color = blendRect(color, vUv, vec2(0.56, 0.88), vec2(0.68, 0.93), mix(sphereColor, domeColor, projMode), 1.0);
-
-                // Playback indicator
-                vec3 playColor = mix(vec3(0.56, 0.20, 0.20), vec3(0.26, 0.82, 0.38), step(0.5, playing));
-                color = blendRect(color, vUv, vec2(0.73, 0.88), vec2(0.89, 0.93), playColor, 1.0);
 
                 float textMask = texture(uTextTexture, vUv).r;
                 color = mix(color, vec3(0.97), clamp(textMask * 1.45, 0.0, 1.0));
@@ -1705,7 +1675,6 @@ private:
         hudFlashRtLoc_ = glGetUniformLocation(hudProgram_, "uFlashRT");
         hudFlashLtLoc_ = glGetUniformLocation(hudProgram_, "uFlashLT");
         hudFlashMenuLoc_ = glGetUniformLocation(hudProgram_, "uFlashMenu");
-        hudStatusLoc_ = glGetUniformLocation(hudProgram_, "uStatus");
         hudPointerLeftLoc_ = glGetUniformLocation(hudProgram_, "uPointerLeft");
         hudPointerRightLoc_ = glGetUniformLocation(hudProgram_, "uPointerRight");
         hudTextSamplerLoc_ = glGetUniformLocation(hudProgram_, "uTextTexture");
@@ -2476,7 +2445,7 @@ private:
         DrawHudText(hudTextPixels_, x, y, scale, fittedText, alpha);
     }
 
-    void RefreshHudTextTextureIfNeeded(double nowSeconds) {
+    void RefreshHudTextTextureIfNeeded() {
         if (hudTextTexture_ == 0) {
             return;
         }
@@ -2487,10 +2456,7 @@ private:
         const std::string playbackLabel = currentMediaPlaying_ ? "PLAYING" : "PAUSED";
         const std::string presetLabel = SanitizeHudText(currentPresetLabel_, 56);
         const std::string trackLabel = BuildTrackDisplayLabel(currentMediaLabel_);
-        const bool inputFeedbackActive = nowSeconds <= hudInputFeedbackUntilSeconds_;
-        const std::string centerInfoLabel = inputFeedbackActive
-            ? "INPUT: " + SanitizeHudText(hudInputFeedbackLabel_, 34)
-            : "TRACK: " + trackLabel;
+        const std::string centerInfoLabel = "TRACK: " + trackLabel;
 
         const bool changed =
             hudTextDirty_ ||
@@ -2514,17 +2480,17 @@ private:
         hudTextDirty_ = false;
 
         std::fill(hudTextPixels_.begin(), hudTextPixels_.end(), 0);
-        DrawHudTextCentered(0.05f, 0.34f, 0.92f, 0.965f, "AUD " + hudRenderedAudioLabel_, kHudStatusScale);
-        DrawHudTextCentered(0.36f, 0.64f, 0.92f, 0.965f, "PROJ " + hudRenderedProjectionLabel_, kHudStatusScale);
-        DrawHudTextCentered(0.66f, 0.95f, 0.92f, 0.965f, "PLAY " + hudRenderedPlaybackLabel_, kHudStatusScale);
-        DrawHudTextCentered(0.05f, 0.95f, 0.86f, 0.91f, "PRESET " + hudRenderedPresetLabel_, kHudDetailScale);
+        DrawHudTextCentered(0.05f, 0.34f, 0.885f, 0.93f, "AUD " + hudRenderedAudioLabel_, kHudStatusScale);
+        DrawHudTextCentered(0.36f, 0.64f, 0.885f, 0.93f, "PROJ " + hudRenderedProjectionLabel_, kHudStatusScale);
+        DrawHudTextCentered(0.66f, 0.95f, 0.885f, 0.93f, "PLAY " + hudRenderedPlaybackLabel_, kHudStatusScale);
+        DrawHudTextCentered(0.05f, 0.95f, 0.835f, 0.875f, "PRESET " + hudRenderedPresetLabel_, kHudDetailScale);
 
         DrawHudTextCentered(kHudRectPrevPreset.minU, kHudRectPrevPreset.maxU, kHudRectPrevPreset.minV, kHudRectPrevPreset.maxV, "PREV PRESET", kHudActionScale);
         DrawHudTextCentered(kHudRectNextPreset.minU, kHudRectNextPreset.maxU, kHudRectNextPreset.minV, kHudRectNextPreset.maxV, "NEXT PRESET", kHudActionScale);
         DrawHudTextCentered(kHudRectTogglePlay.minU, kHudRectTogglePlay.maxU, kHudRectTogglePlay.minV, kHudRectTogglePlay.maxV, "PLAY PAUSE", kHudActionScale);
         DrawHudTextCentered(kHudRectNextTrack.minU, kHudRectNextTrack.maxU, kHudRectNextTrack.minV, kHudRectNextTrack.maxV, "NEXT TRACK", kHudActionScale);
-        DrawHudTextCentered(0.07f, 0.93f, 0.54f, 0.60f, hudRenderedInputFeedbackLabel_, kHudInputScale, inputFeedbackActive ? 255 : 170);
-        DrawHudTextCentered(0.07f, 0.93f, 0.25f, 0.29f, "DIRECT HAND TOUCH", kHudInputScale, 190);
+        DrawHudTextCentered(0.07f, 0.93f, 0.535f, 0.585f, hudRenderedInputFeedbackLabel_, kHudInputScale, 170);
+        DrawHudTextCentered(0.07f, 0.93f, 0.245f, 0.295f, "DIRECT HAND TOUCH", kHudInputScale, 190);
         DrawHudTextCentered(kHudRectPack.minU, kHudRectPack.maxU, kHudRectPack.minV, kHudRectPack.maxV, "PACK", kHudTriggerScale);
         DrawHudTextCentered(kHudRectCenter.minU, kHudRectCenter.maxU, kHudRectCenter.minV, kHudRectCenter.maxV, "AUDIO MODE", kHudTriggerScale);
         DrawHudTextCentered(kHudRectProjection.minU, kHudRectProjection.maxU, kHudRectProjection.minV, kHudRectProjection.maxV, "PROJECTION", kHudTriggerScale);
@@ -3442,7 +3408,7 @@ private:
         glDisable(GL_DEPTH_TEST);
 
         glUseProgram(hudProgram_);
-        RefreshHudTextTextureIfNeeded(nowSeconds);
+        RefreshHudTextTextureIfNeeded();
         glUniformMatrix4fv(hudMvpLoc_, 1, GL_FALSE, glm::value_ptr(mvp));
         glUniform4f(hudFlashALoc_, hudFlashA_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashBLoc_, hudFlashB_, 0.0f, 0.0f, 0.0f);
@@ -3451,11 +3417,6 @@ private:
         glUniform4f(hudFlashRtLoc_, hudFlashRt_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashLtLoc_, hudFlashLt_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashMenuLoc_, hudFlashMenu_, 0.0f, 0.0f, 0.0f);
-        glUniform4f(hudStatusLoc_,
-                    static_cast<float>(static_cast<int>(currentAudioMode_)),
-                    projectionMode_ == ProjectionMode::FrontDome ? 1.0f : 0.0f,
-                    currentMediaPlaying_ ? 1.0f : 0.0f,
-                    0.0f);
         const bool leftTouchMode = hudPointerLeftMode_ == HudPointerMode::Touch;
         const bool rightTouchMode = hudPointerRightMode_ == HudPointerMode::Touch;
         const float leftPointerState = !hudPointerLeftVisible_
@@ -3972,7 +3933,6 @@ private:
     GLint hudFlashRtLoc_{-1};
     GLint hudFlashLtLoc_{-1};
     GLint hudFlashMenuLoc_{-1};
-    GLint hudStatusLoc_{-1};
     GLint hudPointerLeftLoc_{-1};
     GLint hudPointerRightLoc_{-1};
     GLint hudTextSamplerLoc_{-1};
