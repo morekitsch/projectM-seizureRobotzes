@@ -47,8 +47,12 @@ constexpr char kLogTag[] = "projectM-QuestXR";
 
 constexpr float kNearZ = 0.05f;
 constexpr float kFarZ = 100.0f;
-constexpr uint32_t kProjectMWidth = 2048;
-constexpr uint32_t kProjectMHeight = 1024;
+constexpr uint32_t kProjectMWidth = 3072;
+constexpr uint32_t kProjectMHeight = 1536;
+constexpr float kDefaultProjectMRenderScale = 0.58f;
+constexpr float kMinProjectMRenderScale = 0.50f;
+constexpr int kMinProjectMRenderWidth = 512;
+constexpr int kMinProjectMRenderHeight = 256;
 constexpr uint32_t kDefaultPcmFramesPerPush = 512;
 constexpr uint32_t kMinPcmFramesPerPush = 256;
 constexpr uint32_t kMaxPcmFramesPerPush = 2048;
@@ -88,6 +92,14 @@ constexpr double kPerfGraceAfterPresetSwitchSeconds = 4.0;
 constexpr float kDefaultPerfAutoSkipMinFps = 42.0f;
 constexpr double kDefaultPerfAutoSkipHoldSeconds = 2.0;
 constexpr double kDefaultPerfAutoSkipCooldownSeconds = 8.0;
+constexpr bool kDefaultPerfAutoScaleEnabled = true;
+constexpr float kDefaultPerfAutoScaleMinRenderScale = 0.54f;
+constexpr float kDefaultPerfAutoScaleStep = 0.03f;
+constexpr float kDefaultPerfAutoScaleDownFps = 68.0f;
+constexpr float kDefaultPerfAutoScaleUpFps = 71.0f;
+constexpr double kDefaultPerfAutoScaleHoldSeconds = 1.4;
+constexpr double kDefaultPerfAutoScaleCooldownSeconds = 1.5;
+constexpr double kRenderStatsLogIntervalSeconds = 5.0;
 constexpr int kDefaultMeshWidth = 64;
 constexpr int kDefaultMeshHeight = 48;
 constexpr int kHudTextTextureWidth = 1024;
@@ -1617,6 +1629,192 @@ private:
         if (!InitializeHandOverlay()) {
             LOGW("Failed to initialize hand overlay renderer.");
         }
+        if (!InitializeSgsrUpscaler()) {
+            LOGW("SGSR upscaler unavailable. Falling back to native projectM resolution.");
+        }
+        return true;
+    }
+
+    bool InitializeSgsrUpscaler() {
+        static const char* kUpscaleVertexShaderSource = R"(
+            #version 300 es
+            precision highp float;
+            layout(location = 0) in vec2 aPosition;
+            layout(location = 1) in vec2 aUv;
+            layout(location = 0) out highp vec4 in_TEXCOORD0;
+            void main() {
+                in_TEXCOORD0 = vec4(aUv, 0.0, 0.0);
+                gl_Position = vec4(aPosition, 0.0, 1.0);
+            }
+        )";
+
+        static const char* kUpscaleFragmentShaderSource = R"(
+            #version 300 es
+            precision mediump float;
+            precision highp int;
+
+            #define OperationMode 1
+            #define EdgeThreshold 4.0/255.0
+            #define EdgeSharpness 2.0
+
+            uniform highp vec4 ViewportInfo[1];
+            uniform mediump sampler2D ps0;
+
+            layout(location = 0) in highp vec4 in_TEXCOORD0;
+            layout(location = 0) out vec4 out_Target0;
+
+            float fastLanczos2(float x) {
+                float wA = x - 4.0;
+                float wB = x * wA - wA;
+                wA *= wA;
+                return wB * wA;
+            }
+
+            vec2 weightY(float dx, float dy, float c, float stddev) {
+                float x = ((dx * dx) + (dy * dy)) * 0.55 + clamp(abs(c) * stddev, 0.0, 1.0);
+                float w = fastLanczos2(x);
+                return vec2(w, w * c);
+            }
+
+            void main() {
+                int mode = OperationMode;
+                float edgeThreshold = EdgeThreshold;
+                float edgeSharpness = EdgeSharpness;
+
+                vec4 color;
+                if (mode == 1) {
+                    color.xyz = textureLod(ps0, in_TEXCOORD0.xy, 0.0).xyz;
+                } else {
+                    color = textureLod(ps0, in_TEXCOORD0.xy, 0.0);
+                }
+
+                if (mode != 4) {
+                    highp vec2 imgCoord = (in_TEXCOORD0.xy * ViewportInfo[0].zw) + vec2(-0.5, 0.5);
+                    highp vec2 imgCoordPixel = floor(imgCoord);
+                    highp vec2 coord = imgCoordPixel * ViewportInfo[0].xy;
+                    vec2 pl = imgCoord - imgCoordPixel;
+                    vec4 left = textureGather(ps0, coord, mode);
+
+                    float edgeVote = abs(left.z - left.y) +
+                                     abs(color[mode] - left.y) +
+                                     abs(color[mode] - left.z);
+                    if (edgeVote > edgeThreshold) {
+                        coord.x += ViewportInfo[0].x;
+
+                        vec4 right = textureGather(ps0, coord + highp vec2(ViewportInfo[0].x, 0.0), mode);
+                        vec4 upDown;
+                        upDown.xy = textureGather(ps0, coord + highp vec2(0.0, -ViewportInfo[0].y), mode).wz;
+                        upDown.zw = textureGather(ps0, coord + highp vec2(0.0, ViewportInfo[0].y), mode).yx;
+
+                        float mean = (left.y + left.z + right.x + right.w) * 0.25;
+                        left -= vec4(mean);
+                        right -= vec4(mean);
+                        upDown -= vec4(mean);
+                        color.w = color[mode] - mean;
+
+                        float sum = (abs(left.x) + abs(left.y) + abs(left.z) + abs(left.w)) +
+                                    (abs(right.x) + abs(right.y) + abs(right.z) + abs(right.w)) +
+                                    (abs(upDown.x) + abs(upDown.y) + abs(upDown.z) + abs(upDown.w));
+                        float stddev = 2.181818 / sum;
+
+                        vec2 aWY = weightY(pl.x, pl.y + 1.0, upDown.x, stddev);
+                        aWY += weightY(pl.x - 1.0, pl.y + 1.0, upDown.y, stddev);
+                        aWY += weightY(pl.x - 1.0, pl.y - 2.0, upDown.z, stddev);
+                        aWY += weightY(pl.x, pl.y - 2.0, upDown.w, stddev);
+                        aWY += weightY(pl.x + 1.0, pl.y - 1.0, left.x, stddev);
+                        aWY += weightY(pl.x, pl.y - 1.0, left.y, stddev);
+                        aWY += weightY(pl.x, pl.y, left.z, stddev);
+                        aWY += weightY(pl.x + 1.0, pl.y, left.w, stddev);
+                        aWY += weightY(pl.x - 1.0, pl.y - 1.0, right.x, stddev);
+                        aWY += weightY(pl.x - 2.0, pl.y - 1.0, right.y, stddev);
+                        aWY += weightY(pl.x - 2.0, pl.y, right.z, stddev);
+                        aWY += weightY(pl.x - 1.0, pl.y, right.w, stddev);
+
+                        float finalY = aWY.y / aWY.x;
+                        float maxY = max(max(left.y, left.z), max(right.x, right.w));
+                        float minY = min(min(left.y, left.z), min(right.x, right.w));
+                        finalY = clamp(edgeSharpness * finalY, minY, maxY);
+
+                        float deltaY = finalY - color.w;
+                        deltaY = clamp(deltaY, -23.0 / 255.0, 23.0 / 255.0);
+
+                        color.x = clamp(color.x + deltaY, 0.0, 1.0);
+                        color.y = clamp(color.y + deltaY, 0.0, 1.0);
+                        color.z = clamp(color.z + deltaY, 0.0, 1.0);
+                    }
+                }
+
+                color.w = 1.0;
+                out_Target0 = color;
+            }
+        )";
+
+        const GLuint vs = CompileShader(GL_VERTEX_SHADER, kUpscaleVertexShaderSource);
+        const GLuint fs = CompileShader(GL_FRAGMENT_SHADER, kUpscaleFragmentShaderSource);
+        if (vs == 0 || fs == 0) {
+            if (vs != 0) {
+                glDeleteShader(vs);
+            }
+            if (fs != 0) {
+                glDeleteShader(fs);
+            }
+            return false;
+        }
+
+        sgsrProgram_ = LinkProgram(vs, fs);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        if (sgsrProgram_ == 0) {
+            return false;
+        }
+
+        sgsrViewportInfoLoc_ = glGetUniformLocation(sgsrProgram_, "ViewportInfo[0]");
+        sgsrSamplerLoc_ = glGetUniformLocation(sgsrProgram_, "ps0");
+        if (sgsrViewportInfoLoc_ < 0 || sgsrSamplerLoc_ < 0) {
+            LOGE("SGSR uniform locations missing.");
+            glDeleteProgram(sgsrProgram_);
+            sgsrProgram_ = 0;
+            return false;
+        }
+
+        static const float kUpscaleQuadVertices[] = {
+            -1.0f, -1.0f, 0.0f, 0.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+             1.0f,  1.0f, 1.0f, 1.0f,
+        };
+
+        glGenVertexArrays(1, &sgsrVao_);
+        glGenBuffers(1, &sgsrVbo_);
+        if (sgsrVao_ == 0 || sgsrVbo_ == 0) {
+            LOGE("Failed to create SGSR full-screen geometry.");
+            if (sgsrVbo_ != 0) {
+                glDeleteBuffers(1, &sgsrVbo_);
+                sgsrVbo_ = 0;
+            }
+            if (sgsrVao_ != 0) {
+                glDeleteVertexArrays(1, &sgsrVao_);
+                sgsrVao_ = 0;
+            }
+            glDeleteProgram(sgsrProgram_);
+            sgsrProgram_ = 0;
+            return false;
+        }
+
+        glBindVertexArray(sgsrVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, sgsrVbo_);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(kUpscaleQuadVertices), kUpscaleQuadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4,
+                              reinterpret_cast<const void*>(sizeof(float) * 2));
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        LOGI("SGSR upscaler initialized.");
         return true;
     }
 
@@ -2191,8 +2389,36 @@ private:
             projectm_set_texture_search_paths(projectM_, &texturePath, 1);
         }
 
-        glGenTextures(1, &projectMTexture_);
-        glBindTexture(GL_TEXTURE_2D, projectMTexture_);
+        std::string sgsrText;
+        if (ReadSystemProperty("debug.projectm.quest.perf.sgsr", sgsrText)) {
+            bool parsedSgsr = sgsrEnabled_;
+            if (ParseBoolText(sgsrText, parsedSgsr)) {
+                sgsrEnabled_ = parsedSgsr;
+            }
+        }
+        std::string renderScaleText;
+        if (ReadSystemProperty("debug.projectm.quest.perf.render_scale", renderScaleText)) {
+            float parsedRenderScale = projectMRenderScale_;
+            if (ParseFloatText(renderScaleText, parsedRenderScale)) {
+                projectMRenderScale_ = std::clamp(parsedRenderScale, kMinProjectMRenderScale, 1.0f);
+            }
+        }
+        projectMAdaptiveRenderScale_ = projectMRenderScale_;
+
+        if (!ApplyProjectMRenderConfiguration(true)) {
+            LOGE("Failed to initialize projectM render targets.");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool CreateColorTexture(GLuint& textureOut, int width, int height) {
+        glGenTextures(1, &textureOut);
+        if (textureOut == 0) {
+            return false;
+        }
+        glBindTexture(GL_TEXTURE_2D, textureOut);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -2200,25 +2426,169 @@ private:
         glTexImage2D(GL_TEXTURE_2D,
                      0,
                      GL_RGBA,
-                     static_cast<GLsizei>(kProjectMWidth),
-                     static_cast<GLsizei>(kProjectMHeight),
+                     width,
+                     height,
                      0,
                      GL_RGBA,
                      GL_UNSIGNED_BYTE,
                      nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
 
-        glGenFramebuffers(1, &projectMFbo_);
-        glBindFramebuffer(GL_FRAMEBUFFER, projectMFbo_);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, projectMTexture_, 0);
-
-        const GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
-            LOGE("projectM framebuffer incomplete: 0x%x", fboStatus);
+        const GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            LOGE("CreateColorTexture failed (%d x %d): 0x%x", width, height, err);
+            glDeleteTextures(1, &textureOut);
+            textureOut = 0;
             return false;
         }
 
         return true;
+    }
+
+    bool BuildFramebuffer(GLuint& framebufferOut, GLuint colorTexture) {
+        glGenFramebuffers(1, &framebufferOut);
+        if (framebufferOut == 0) {
+            return false;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, framebufferOut);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+        const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            LOGE("Framebuffer incomplete: 0x%x", status);
+            glDeleteFramebuffers(1, &framebufferOut);
+            framebufferOut = 0;
+            return false;
+        }
+        return true;
+    }
+
+    void DestroyProjectMRenderTargets() {
+        if (projectMUpscaleFbo_ != 0) {
+            glDeleteFramebuffers(1, &projectMUpscaleFbo_);
+            projectMUpscaleFbo_ = 0;
+        }
+        if (projectMFbo_ != 0) {
+            glDeleteFramebuffers(1, &projectMFbo_);
+            projectMFbo_ = 0;
+        }
+        if (projectMLowResTexture_ != 0) {
+            glDeleteTextures(1, &projectMLowResTexture_);
+            projectMLowResTexture_ = 0;
+        }
+        if (projectMTexture_ != 0) {
+            glDeleteTextures(1, &projectMTexture_);
+            projectMTexture_ = 0;
+        }
+    }
+
+    bool ApplyProjectMRenderConfiguration(bool forceLog = false) {
+        const float requestedScale = std::clamp(projectMRenderScale_, kMinProjectMRenderScale, 1.0f);
+        projectMAdaptiveRenderScale_ = std::clamp(projectMAdaptiveRenderScale_,
+                                                  kMinProjectMRenderScale,
+                                                  requestedScale);
+
+        const bool sgsrAvailable = sgsrProgram_ != 0 && sgsrVao_ != 0;
+        const bool useUpscaler = sgsrEnabled_ && sgsrAvailable && projectMAdaptiveRenderScale_ < 0.999f;
+        const float effectiveScale = useUpscaler ? projectMAdaptiveRenderScale_ : 1.0f;
+
+        const int renderWidth = std::clamp(
+            static_cast<int>(std::lround(static_cast<double>(kProjectMWidth) * effectiveScale)),
+            kMinProjectMRenderWidth,
+            static_cast<int>(kProjectMWidth));
+        const int renderHeight = std::clamp(
+            static_cast<int>(std::lround(static_cast<double>(kProjectMHeight) * effectiveScale)),
+            kMinProjectMRenderHeight,
+            static_cast<int>(kProjectMHeight));
+
+        const bool unchanged =
+            !forceLog &&
+            projectMRenderWidth_ == renderWidth &&
+            projectMRenderHeight_ == renderHeight &&
+            projectMUseUpscaler_ == useUpscaler &&
+            projectMTexture_ != 0 &&
+            projectMFbo_ != 0 &&
+            (!useUpscaler || (projectMLowResTexture_ != 0 && projectMUpscaleFbo_ != 0));
+        if (unchanged) {
+            return true;
+        }
+
+        DestroyProjectMRenderTargets();
+
+        if (!CreateColorTexture(projectMTexture_, static_cast<int>(kProjectMWidth), static_cast<int>(kProjectMHeight))) {
+            return false;
+        }
+
+        if (useUpscaler) {
+            if (!CreateColorTexture(projectMLowResTexture_, renderWidth, renderHeight)) {
+                DestroyProjectMRenderTargets();
+                return false;
+            }
+            if (!BuildFramebuffer(projectMFbo_, projectMLowResTexture_)) {
+                DestroyProjectMRenderTargets();
+                return false;
+            }
+            if (!BuildFramebuffer(projectMUpscaleFbo_, projectMTexture_)) {
+                DestroyProjectMRenderTargets();
+                return false;
+            }
+        } else {
+            if (!BuildFramebuffer(projectMFbo_, projectMTexture_)) {
+                DestroyProjectMRenderTargets();
+                return false;
+            }
+        }
+
+        projectMUseUpscaler_ = useUpscaler;
+        projectMRenderWidth_ = renderWidth;
+        projectMRenderHeight_ = renderHeight;
+
+        if (projectM_ != nullptr) {
+            projectm_set_window_size(projectM_,
+                                     static_cast<uint32_t>(projectMRenderWidth_),
+                                     static_cast<uint32_t>(projectMRenderHeight_));
+        }
+
+        LOGI("projectM render config: SGSR requested=%d available=%d active=%d targetScale=%.2f adaptiveScale=%.2f render=%d x %d output=%u x %u",
+             sgsrEnabled_ ? 1 : 0,
+             sgsrAvailable ? 1 : 0,
+             projectMUseUpscaler_ ? 1 : 0,
+             requestedScale,
+             effectiveScale,
+             projectMRenderWidth_,
+             projectMRenderHeight_,
+             static_cast<unsigned>(kProjectMWidth),
+             static_cast<unsigned>(kProjectMHeight));
+        return true;
+    }
+
+    void RenderSgsrUpscalePass() {
+        if (!projectMUseUpscaler_ || projectMUpscaleFbo_ == 0 || projectMLowResTexture_ == 0 ||
+            sgsrProgram_ == 0 || sgsrVao_ == 0 || projectMRenderWidth_ <= 0 || projectMRenderHeight_ <= 0) {
+            return;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, projectMUpscaleFbo_);
+        glViewport(0, 0, static_cast<GLsizei>(kProjectMWidth), static_cast<GLsizei>(kProjectMHeight));
+        glDisable(GL_BLEND);
+        glUseProgram(sgsrProgram_);
+        glUniform4f(sgsrViewportInfoLoc_,
+                    1.0f / static_cast<float>(projectMRenderWidth_),
+                    1.0f / static_cast<float>(projectMRenderHeight_),
+                    static_cast<float>(projectMRenderWidth_),
+                    static_cast<float>(projectMRenderHeight_));
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, projectMLowResTexture_);
+        glUniform1i(sgsrSamplerLoc_, 0);
+        glBindVertexArray(sgsrVao_);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    float EffectiveProjectMRenderScale() const {
+        return static_cast<float>(projectMRenderWidth_) / static_cast<float>(kProjectMWidth);
     }
 
     bool IsPresetMarkedSlow(const std::string& presetPath) const {
@@ -2586,6 +2956,30 @@ private:
         DrawHudText(hudTextPixels_, x, y, scale, fittedText, alpha);
     }
 
+    std::string BuildRenderStatsHudLabel() const {
+        const double smoothedFps = 1.0 / std::max(smoothedFrameSeconds_, 1e-4);
+        char text[176] = {};
+        if (projectMUseUpscaler_) {
+            std::snprintf(text,
+                          sizeof(text),
+                          "SGSR ON  %dx%d -> %ux%u  SCALE %.2f  FPS %.0f",
+                          projectMRenderWidth_,
+                          projectMRenderHeight_,
+                          static_cast<unsigned>(kProjectMWidth),
+                          static_cast<unsigned>(kProjectMHeight),
+                          EffectiveProjectMRenderScale(),
+                          std::round(smoothedFps));
+        } else {
+            std::snprintf(text,
+                          sizeof(text),
+                          "SGSR OFF  NATIVE %ux%u  FPS %.0f",
+                          static_cast<unsigned>(kProjectMWidth),
+                          static_cast<unsigned>(kProjectMHeight),
+                          std::round(smoothedFps));
+        }
+        return SanitizeHudText(text, 72);
+    }
+
     void RefreshHudTextTextureIfNeeded() {
         if (hudTextTexture_ == 0) {
             return;
@@ -2597,6 +2991,7 @@ private:
         const std::string playbackLabel = currentMediaPlaying_ ? "PLAYING" : "PAUSED";
         const std::string presetLabel = SanitizeHudText(currentPresetLabel_, 56);
         const std::string trackLabel = BuildTrackDisplayLabel(currentMediaLabel_);
+        const std::string renderStatsLabel = BuildRenderStatsHudLabel();
         const std::string centerInfoLabel = "TRACK: " + trackLabel;
 
         const bool changed =
@@ -2605,6 +3000,7 @@ private:
             hudRenderedProjectionLabel_ != projectionLabel ||
             hudRenderedPlaybackLabel_ != playbackLabel ||
             hudRenderedPresetLabel_ != presetLabel ||
+            hudRenderedRenderStatsLabel_ != renderStatsLabel ||
             hudRenderedTrackLabel_ != trackLabel ||
             hudRenderedInputFeedbackLabel_ != centerInfoLabel;
 
@@ -2616,6 +3012,7 @@ private:
         hudRenderedProjectionLabel_ = projectionLabel;
         hudRenderedPlaybackLabel_ = playbackLabel;
         hudRenderedPresetLabel_ = presetLabel;
+        hudRenderedRenderStatsLabel_ = renderStatsLabel;
         hudRenderedTrackLabel_ = trackLabel;
         hudRenderedInputFeedbackLabel_ = centerInfoLabel;
         hudTextDirty_ = false;
@@ -2625,6 +3022,7 @@ private:
         DrawHudTextCentered(0.36f, 0.64f, 0.885f, 0.93f, "PROJ " + hudRenderedProjectionLabel_, kHudStatusScale);
         DrawHudTextCentered(0.66f, 0.95f, 0.885f, 0.93f, "PLAY " + hudRenderedPlaybackLabel_, kHudStatusScale);
         DrawHudTextCentered(0.05f, 0.95f, 0.835f, 0.875f, "PRESET " + hudRenderedPresetLabel_, kHudDetailScale);
+        DrawHudTextCentered(0.05f, 0.95f, 0.785f, 0.825f, hudRenderedRenderStatsLabel_, kHudDetailScale, 210);
 
         DrawHudTextCentered(kHudRectPrevPreset.minU, kHudRectPrevPreset.maxU, kHudRectPrevPreset.minV, kHudRectPrevPreset.maxV, "PREV PRESET", kHudActionScale);
         DrawHudTextCentered(kHudRectNextPreset.minU, kHudRectNextPreset.maxU, kHudRectNextPreset.minV, kHudRectNextPreset.maxV, "NEXT PRESET", kHudActionScale);
@@ -3229,6 +3627,43 @@ private:
 
         const bool perfAutoSkip = readBoolProperty("debug.projectm.quest.perf.auto_skip", true);
         const bool skipMarked = readBoolProperty("debug.projectm.quest.perf.skip_marked", true);
+        const bool sgsrEnabled = readBoolProperty("debug.projectm.quest.perf.sgsr", true);
+        const float renderScale = std::clamp(readFloatProperty("debug.projectm.quest.perf.render_scale",
+                                                                kDefaultProjectMRenderScale),
+                                             kMinProjectMRenderScale,
+                                             1.0f);
+        const bool perfAutoScale = readBoolProperty("debug.projectm.quest.perf.auto_scale",
+                                                     kDefaultPerfAutoScaleEnabled);
+        const float perfAutoScaleMinRenderScale =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.auto_scale.min_render_scale",
+                                         kDefaultPerfAutoScaleMinRenderScale),
+                       kMinProjectMRenderScale,
+                       1.0f);
+        const float perfAutoScaleStep =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.auto_scale.step",
+                                         kDefaultPerfAutoScaleStep),
+                       0.01f,
+                       0.20f);
+        const float perfAutoScaleDownFps =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.auto_scale.down_fps",
+                                         kDefaultPerfAutoScaleDownFps),
+                       20.0f,
+                       90.0f);
+        const float perfAutoScaleUpFps =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.auto_scale.up_fps",
+                                         kDefaultPerfAutoScaleUpFps),
+                       20.0f,
+                       90.0f);
+        const float perfAutoScaleHold =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.auto_scale.hold_seconds",
+                                         static_cast<float>(kDefaultPerfAutoScaleHoldSeconds)),
+                       0.2f,
+                       10.0f);
+        const float perfAutoScaleCooldown =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.auto_scale.cooldown_seconds",
+                                         static_cast<float>(kDefaultPerfAutoScaleCooldownSeconds)),
+                       0.1f,
+                       30.0f);
         const float perfMinFps = std::clamp(readFloatProperty("debug.projectm.quest.perf.min_fps", kDefaultPerfAutoSkipMinFps), 15.0f, 90.0f);
         const float perfHold = std::clamp(readFloatProperty("debug.projectm.quest.perf.bad_seconds",
                                                             static_cast<float>(kDefaultPerfAutoSkipHoldSeconds)),
@@ -3278,6 +3713,42 @@ private:
         perfAutoSkipMinFps_ = perfMinFps;
         perfAutoSkipHoldSeconds_ = static_cast<double>(perfHold);
         perfAutoSkipCooldownSeconds_ = static_cast<double>(perfCooldown);
+        perfAutoScaleEnabled_ = perfAutoScale;
+        perfAutoScaleMinRenderScale_ = std::clamp(std::min(perfAutoScaleMinRenderScale, renderScale),
+                                                  kMinProjectMRenderScale,
+                                                  1.0f);
+        perfAutoScaleStep_ = perfAutoScaleStep;
+        perfAutoScaleDownFps_ = perfAutoScaleDownFps;
+        perfAutoScaleUpFps_ = std::clamp(std::max(perfAutoScaleUpFps, perfAutoScaleDownFps_ + 0.5f), 20.0f, 90.0f);
+        perfAutoScaleHoldSeconds_ = static_cast<double>(perfAutoScaleHold);
+        perfAutoScaleCooldownSeconds_ = static_cast<double>(perfAutoScaleCooldown);
+
+        bool renderConfigChanged = false;
+        if (sgsrEnabled_ != sgsrEnabled) {
+            sgsrEnabled_ = sgsrEnabled;
+            renderConfigChanged = true;
+        }
+        if (std::fabs(projectMRenderScale_ - renderScale) > 0.0005f) {
+            projectMRenderScale_ = renderScale;
+            projectMAdaptiveRenderScale_ = projectMRenderScale_;
+            lowFpsForAutoScaleSinceSeconds_ = -1.0;
+            highFpsForAutoScaleSinceSeconds_ = -1.0;
+            renderConfigChanged = true;
+        }
+        if (!perfAutoScaleEnabled_ &&
+            std::fabs(projectMAdaptiveRenderScale_ - projectMRenderScale_) > 0.0005f) {
+            projectMAdaptiveRenderScale_ = projectMRenderScale_;
+            renderConfigChanged = true;
+        }
+        if (renderConfigChanged && projectM_ != nullptr) {
+            if (!ApplyProjectMRenderConfiguration()) {
+                LOGE("Failed to apply runtime render scaling update.");
+                exitRenderLoop_ = true;
+            } else {
+                SetHudInputFeedback(nowSeconds, projectMUseUpscaler_ ? "SGSR SCALE UPDATED" : "RENDER SCALE UPDATED");
+                ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+            }
+        }
 
         std::string meshText;
         int parsedMeshWidth = kDefaultMeshWidth;
@@ -3334,6 +3805,98 @@ private:
             smoothedFrameSeconds_ = smoothedFrameSeconds_ * 0.92 + clampedDelta * 0.08;
         }
 
+        const double smoothedFps = 1.0 / std::max(smoothedFrameSeconds_, 1e-4);
+        if (nowSeconds - lastRenderStatsLogSeconds_ >= kRenderStatsLogIntervalSeconds) {
+            lastRenderStatsLogSeconds_ = nowSeconds;
+            LOGI("Render stats: SGSR=%d targetScale=%.2f adaptiveScale=%.2f render=%d x %d output=%u x %u smoothedFPS=%.1f",
+                 projectMUseUpscaler_ ? 1 : 0,
+                 projectMRenderScale_,
+                 EffectiveProjectMRenderScale(),
+                 projectMRenderWidth_,
+                 projectMRenderHeight_,
+                 static_cast<unsigned>(kProjectMWidth),
+                 static_cast<unsigned>(kProjectMHeight),
+                 smoothedFps);
+        }
+
+        const bool sgsrAvailable = sgsrProgram_ != 0 && sgsrVao_ != 0;
+        if (perfAutoScaleEnabled_ &&
+            sgsrEnabled_ &&
+            sgsrAvailable &&
+            projectMRenderScale_ < 0.999f &&
+            projectM_ != nullptr &&
+            nowSeconds - lastPresetSwitchSeconds_ >= kPerfGraceAfterPresetSwitchSeconds) {
+            const float minAdaptiveScale =
+                std::clamp(std::min(perfAutoScaleMinRenderScale_, projectMRenderScale_),
+                           kMinProjectMRenderScale,
+                           1.0f);
+            const bool cooldownReady =
+                nowSeconds - lastAutoScaleAdjustSeconds_ >= perfAutoScaleCooldownSeconds_;
+
+            if (smoothedFps < static_cast<double>(perfAutoScaleDownFps_) &&
+                projectMAdaptiveRenderScale_ > minAdaptiveScale + 0.0005f) {
+                highFpsForAutoScaleSinceSeconds_ = -1.0;
+                if (lowFpsForAutoScaleSinceSeconds_ < 0.0) {
+                    lowFpsForAutoScaleSinceSeconds_ = nowSeconds;
+                } else if (cooldownReady &&
+                           nowSeconds - lowFpsForAutoScaleSinceSeconds_ >= perfAutoScaleHoldSeconds_) {
+                    const float nextScale = std::max(minAdaptiveScale, projectMAdaptiveRenderScale_ - perfAutoScaleStep_);
+                    if (std::fabs(nextScale - projectMAdaptiveRenderScale_) > 0.0005f) {
+                        projectMAdaptiveRenderScale_ = nextScale;
+                        if (!ApplyProjectMRenderConfiguration()) {
+                            LOGE("Failed to auto-reduce render scale.");
+                            exitRenderLoop_ = true;
+                            return;
+                        }
+                        lowFpsForAutoScaleSinceSeconds_ = -1.0;
+                        highFpsForAutoScaleSinceSeconds_ = -1.0;
+                        lastAutoScaleAdjustSeconds_ = nowSeconds;
+                        SetHudInputFeedback(nowSeconds, "AUTO SCALE DOWN");
+                        ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+                        LOGW("Auto render scale down: %.2f (smoothed FPS %.1f < %.1f)",
+                             EffectiveProjectMRenderScale(),
+                             smoothedFps,
+                             static_cast<double>(perfAutoScaleDownFps_));
+                        return;
+                    }
+                }
+            } else {
+                lowFpsForAutoScaleSinceSeconds_ = -1.0;
+            }
+
+            if (smoothedFps > static_cast<double>(perfAutoScaleUpFps_) &&
+                projectMAdaptiveRenderScale_ < projectMRenderScale_ - 0.0005f) {
+                if (highFpsForAutoScaleSinceSeconds_ < 0.0) {
+                    highFpsForAutoScaleSinceSeconds_ = nowSeconds;
+                } else if (cooldownReady &&
+                           nowSeconds - highFpsForAutoScaleSinceSeconds_ >= perfAutoScaleHoldSeconds_) {
+                    const float nextScale = std::min(projectMRenderScale_, projectMAdaptiveRenderScale_ + perfAutoScaleStep_);
+                    if (std::fabs(nextScale - projectMAdaptiveRenderScale_) > 0.0005f) {
+                        projectMAdaptiveRenderScale_ = nextScale;
+                        if (!ApplyProjectMRenderConfiguration()) {
+                            LOGE("Failed to auto-increase render scale.");
+                            exitRenderLoop_ = true;
+                            return;
+                        }
+                        highFpsForAutoScaleSinceSeconds_ = -1.0;
+                        lowFpsForAutoScaleSinceSeconds_ = -1.0;
+                        lastAutoScaleAdjustSeconds_ = nowSeconds;
+                        SetHudInputFeedback(nowSeconds, "AUTO SCALE UP");
+                        ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+                        LOGI("Auto render scale up: %.2f (smoothed FPS %.1f > %.1f)",
+                             EffectiveProjectMRenderScale(),
+                             smoothedFps,
+                             static_cast<double>(perfAutoScaleUpFps_));
+                    }
+                }
+            } else {
+                highFpsForAutoScaleSinceSeconds_ = -1.0;
+            }
+        } else {
+            lowFpsForAutoScaleSinceSeconds_ = -1.0;
+            highFpsForAutoScaleSinceSeconds_ = -1.0;
+        }
+
         if (!perfAutoSkipEnabled_ || presetFiles_.size() <= 1 || usingFallbackPreset_) {
             lowFpsSinceSeconds_ = -1.0;
             return;
@@ -3344,8 +3907,6 @@ private:
             lowFpsSinceSeconds_ = -1.0;
             return;
         }
-
-        const double smoothedFps = 1.0 / std::max(smoothedFrameSeconds_, 1e-4);
         if (smoothedFps >= static_cast<double>(perfAutoSkipMinFps_)) {
             lowFpsSinceSeconds_ = -1.0;
             return;
@@ -3590,7 +4151,7 @@ private:
     }
 
     void RenderProjectMFrame(double nowSeconds, float deltaSeconds) {
-        if (!projectM_) {
+        if (!projectM_ || projectMFbo_ == 0 || projectMTexture_ == 0) {
             return;
         }
 
@@ -3606,9 +4167,16 @@ private:
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, projectMFbo_);
-        glViewport(0, 0, static_cast<GLsizei>(kProjectMWidth), static_cast<GLsizei>(kProjectMHeight));
+        glViewport(0, 0,
+                   static_cast<GLsizei>(projectMRenderWidth_),
+                   static_cast<GLsizei>(projectMRenderHeight_));
+        glDisable(GL_BLEND);
         projectm_opengl_render_frame_fbo(projectM_, projectMFbo_);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (projectMUseUpscaler_) {
+            RenderSgsrUpscalePass();
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
 
     void PollOpenXrEvents() {
@@ -3651,6 +4219,10 @@ private:
                     lowFpsSinceSeconds_ = -1.0;
                     lastAutoSkipSeconds_ = -1000.0;
                     smoothedFrameSeconds_ = 1.0 / 72.0;
+                    lowFpsForAutoScaleSinceSeconds_ = -1.0;
+                    highFpsForAutoScaleSinceSeconds_ = -1.0;
+                    lastAutoScaleAdjustSeconds_ = -1000.0;
+                    lastRenderStatsLogSeconds_ = -1000.0;
                     lastRuntimePropertyPollSeconds_ = -1000.0;
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
@@ -3852,14 +4424,7 @@ private:
             projectM_ = nullptr;
         }
 
-        if (projectMFbo_ != 0) {
-            glDeleteFramebuffers(1, &projectMFbo_);
-            projectMFbo_ = 0;
-        }
-        if (projectMTexture_ != 0) {
-            glDeleteTextures(1, &projectMTexture_);
-            projectMTexture_ = 0;
-        }
+        DestroyProjectMRenderTargets();
 
         if (sphereIbo_ != 0) {
             glDeleteBuffers(1, &sphereIbo_);
@@ -3905,6 +4470,18 @@ private:
         if (handProgram_ != 0) {
             glDeleteProgram(handProgram_);
             handProgram_ = 0;
+        }
+        if (sgsrVbo_ != 0) {
+            glDeleteBuffers(1, &sgsrVbo_);
+            sgsrVbo_ = 0;
+        }
+        if (sgsrVao_ != 0) {
+            glDeleteVertexArrays(1, &sgsrVao_);
+            sgsrVao_ = 0;
+        }
+        if (sgsrProgram_ != 0) {
+            glDeleteProgram(sgsrProgram_);
+            sgsrProgram_ = 0;
         }
 
         if (swapchainFramebuffer_ != 0) {
@@ -4057,6 +4634,11 @@ private:
     GLint uViewProjectionLoc_{-1};
     GLint uTextureLoc_{-1};
     GLint uProjectionModeLoc_{-1};
+    GLuint sgsrProgram_{0};
+    GLuint sgsrVao_{0};
+    GLuint sgsrVbo_{0};
+    GLint sgsrViewportInfoLoc_{-1};
+    GLint sgsrSamplerLoc_{-1};
     GLuint handProgram_{0};
     GLuint handVao_{0};
     GLuint handVbo_{0};
@@ -4087,7 +4669,15 @@ private:
 
     projectm_handle projectM_{nullptr};
     GLuint projectMTexture_{0};
+    GLuint projectMLowResTexture_{0};
     GLuint projectMFbo_{0};
+    GLuint projectMUpscaleFbo_{0};
+    int projectMRenderWidth_{static_cast<int>(kProjectMWidth)};
+    int projectMRenderHeight_{static_cast<int>(kProjectMHeight)};
+    float projectMRenderScale_{kDefaultProjectMRenderScale};
+    float projectMAdaptiveRenderScale_{kDefaultProjectMRenderScale};
+    bool projectMUseUpscaler_{false};
+    bool sgsrEnabled_{true};
 
     std::vector<std::string> presetFiles_;
     size_t currentPresetIndex_{0};
@@ -4102,6 +4692,7 @@ private:
     std::string hudRenderedProjectionLabel_;
     std::string hudRenderedPlaybackLabel_;
     std::string hudRenderedPresetLabel_;
+    std::string hudRenderedRenderStatsLabel_;
     std::string hudRenderedTrackLabel_;
     std::string hudInputFeedbackLabel_{"READY"};
     std::string hudRenderedInputFeedbackLabel_;
@@ -4146,13 +4737,24 @@ private:
     int meshWidth_{kDefaultMeshWidth};
     int meshHeight_{kDefaultMeshHeight};
     bool perfAutoSkipEnabled_{true};
+    bool perfAutoScaleEnabled_{kDefaultPerfAutoScaleEnabled};
     bool skipMarkedPresets_{true};
     float perfAutoSkipMinFps_{kDefaultPerfAutoSkipMinFps};
     double perfAutoSkipHoldSeconds_{kDefaultPerfAutoSkipHoldSeconds};
     double perfAutoSkipCooldownSeconds_{kDefaultPerfAutoSkipCooldownSeconds};
+    float perfAutoScaleMinRenderScale_{kDefaultPerfAutoScaleMinRenderScale};
+    float perfAutoScaleStep_{kDefaultPerfAutoScaleStep};
+    float perfAutoScaleDownFps_{kDefaultPerfAutoScaleDownFps};
+    float perfAutoScaleUpFps_{kDefaultPerfAutoScaleUpFps};
+    double perfAutoScaleHoldSeconds_{kDefaultPerfAutoScaleHoldSeconds};
+    double perfAutoScaleCooldownSeconds_{kDefaultPerfAutoScaleCooldownSeconds};
     double smoothedFrameSeconds_{1.0 / 72.0};
     double lowFpsSinceSeconds_{-1.0};
     double lastAutoSkipSeconds_{-1000.0};
+    double lowFpsForAutoScaleSinceSeconds_{-1.0};
+    double highFpsForAutoScaleSinceSeconds_{-1.0};
+    double lastAutoScaleAdjustSeconds_{-1000.0};
+    double lastRenderStatsLogSeconds_{-1000.0};
     double lastRuntimePropertyPollSeconds_{-1000.0};
     bool clearMarkedLatch_{false};
     std::vector<std::string> slowPresets_;
