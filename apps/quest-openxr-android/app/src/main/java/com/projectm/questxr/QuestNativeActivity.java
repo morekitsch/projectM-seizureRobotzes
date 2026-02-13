@@ -439,16 +439,16 @@ public class QuestNativeActivity extends NativeActivity {
         }
         audioMode = AUDIO_MODE_GLOBAL_CAPTURE;
         mediaPlaying = false;
-        currentMediaLabel = "system_mix";
+        currentMediaLabel = "system_sound";
         pushUiStateToNative();
-        Log.i(TAG, "Using global output visualizer capture.");
+        Log.i(TAG, "Using system sound visualizer capture.");
         return true;
     }
 
     private boolean startMediaPlayerMode() {
         rebuildMediaPlaylist();
         if (mediaPlaylist.isEmpty()) {
-            Log.w(TAG, "No media source found for media fallback mode.");
+            Log.w(TAG, "No media source found for internal player audio mode.");
             return false;
         }
 
@@ -533,9 +533,9 @@ public class QuestNativeActivity extends NativeActivity {
                     audioMode = AUDIO_MODE_MEDIA_FALLBACK;
                     currentMediaLabel = new File(source).getName();
                     pushUiStateToNative();
-                    Log.i(TAG, "Media fallback started: " + source);
+                    Log.i(TAG, "Internal player audio started: " + source);
                 } catch (Throwable t) {
-                    Log.e(TAG, "Failed to start media fallback playback", t);
+                    Log.e(TAG, "Failed to start internal player audio playback", t);
                 }
             });
 
@@ -563,7 +563,7 @@ public class QuestNativeActivity extends NativeActivity {
             mediaPlayer.prepareAsync();
             return true;
         } catch (Throwable t) {
-            Log.e(TAG, "Failed to initialize media fallback", t);
+            Log.e(TAG, "Failed to initialize internal player audio", t);
             releaseMediaPlayer();
             return false;
         }
@@ -1003,7 +1003,7 @@ public class QuestNativeActivity extends NativeActivity {
             case AUDIO_MODE_GLOBAL_CAPTURE:
                 return "global_unavailable";
             case AUDIO_MODE_MEDIA_FALLBACK:
-                return "media_unavailable";
+                return "internal_player_unavailable";
             case AUDIO_MODE_MICROPHONE:
                 return "mic_unavailable";
             case AUDIO_MODE_SYNTHETIC:

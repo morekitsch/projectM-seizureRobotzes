@@ -2544,9 +2544,9 @@ private:
             case AudioMode::Synthetic:
                 return "SYNTHETIC";
             case AudioMode::GlobalCapture:
-                return "GLOBAL CAPTURE";
+                return "SYSTEM SOUND";
             case AudioMode::MediaFallback:
-                return "MEDIA FALLBACK";
+                return "INTERNAL PLAYER AUDIO";
             case AudioMode::Microphone:
                 return "MICROPHONE";
             default:
