@@ -59,7 +59,7 @@ constexpr double kPresetScanIntervalSeconds = 10.0;
 constexpr double kAudioFallbackDelaySeconds = 3.0;
 constexpr size_t kMaxQueuedAudioFrames = 48000 * 2;
 constexpr float kHudDistance = 0.72f;
-constexpr float kHudDistanceHandTracking = 0.50f;
+constexpr float kHudDistanceHandTracking = 0.42f;
 constexpr float kHudVerticalOffset = -0.27f;
 constexpr float kHudWidth = 0.68f;
 constexpr float kHudHeight = 0.34f;
@@ -68,6 +68,8 @@ constexpr double kHudVisibleAfterInteractionSeconds = 6.0;
 constexpr double kHudVisibleAfterStatusChangeSeconds = 3.0;
 constexpr double kHudInputFeedbackSeconds = 1.4;
 constexpr float kTriggerPressThreshold = 0.75f;
+constexpr double kHandModeSwitchToHandDebounceSeconds = 0.08;
+constexpr double kHandModeSwitchToControllerDebounceSeconds = 0.16;
 constexpr float kHudTouchHoverDistance = 0.10f;
 constexpr float kHudTouchActivationDistance = 0.030f;
 constexpr float kHudTouchMaxPenetration = 0.025f;
@@ -207,6 +209,13 @@ struct HandJointRenderState {
     bool isActive{false};
     std::array<glm::vec3, XR_HAND_JOINT_COUNT_EXT> positions{};
     std::array<uint8_t, XR_HAND_JOINT_COUNT_EXT> tracked{};
+};
+
+struct HandModeDebounceState {
+    bool initialized{false};
+    bool rawHandTracking{false};
+    bool debouncedHandTracking{false};
+    double rawStateSinceSeconds{0.0};
 };
 
 enum class AudioMode : int {
@@ -2522,7 +2531,7 @@ private:
         DrawHudTextCentered(kHudRectTogglePlay.minU, kHudRectTogglePlay.maxU, kHudRectTogglePlay.minV, kHudRectTogglePlay.maxV, "PLAY PAUSE", kHudActionScale);
         DrawHudTextCentered(kHudRectNextTrack.minU, kHudRectNextTrack.maxU, kHudRectNextTrack.minV, kHudRectNextTrack.maxV, "NEXT TRACK", kHudActionScale);
         DrawHudTextCentered(0.07f, 0.93f, 0.54f, 0.60f, hudRenderedInputFeedbackLabel_, kHudInputScale, inputFeedbackActive ? 255 : 170);
-        DrawHudTextCentered(0.07f, 0.93f, 0.25f, 0.29f, "TOUCH OR AIM+PINCH", kHudInputScale, 190);
+        DrawHudTextCentered(0.07f, 0.93f, 0.25f, 0.29f, "DIRECT HAND TOUCH", kHudInputScale, 190);
         DrawHudTextCentered(kHudRectPack.minU, kHudRectPack.maxU, kHudRectPack.minV, kHudRectPack.maxV, "PACK", kHudTriggerScale);
         DrawHudTextCentered(kHudRectCenter.minU, kHudRectCenter.maxU, kHudRectCenter.minV, kHudRectCenter.maxV, "AUDIO MODE", kHudTriggerScale);
         DrawHudTextCentered(kHudRectProjection.minU, kHudRectProjection.maxU, kHudRectProjection.minV, kHudRectProjection.maxV, "PROJECTION", kHudTriggerScale);
@@ -2658,6 +2667,39 @@ private:
         return !IsControllerInteractionProfile(interactionProfilePath);
     }
 
+    void ResetHandModeDebounce() {
+        leftHandModeDebounce_ = {};
+        rightHandModeDebounce_ = {};
+    }
+
+    bool DebounceHandTrackingMode(HandSide handSide, bool rawHandTracking, double nowSeconds) {
+        HandModeDebounceState& state =
+            handSide == HandSide::Left ? leftHandModeDebounce_ : rightHandModeDebounce_;
+        if (!state.initialized) {
+            state.initialized = true;
+            state.rawHandTracking = rawHandTracking;
+            state.debouncedHandTracking = rawHandTracking;
+            state.rawStateSinceSeconds = nowSeconds;
+            return state.debouncedHandTracking;
+        }
+
+        if (state.rawHandTracking != rawHandTracking) {
+            state.rawHandTracking = rawHandTracking;
+            state.rawStateSinceSeconds = nowSeconds;
+        }
+
+        if (state.debouncedHandTracking != state.rawHandTracking) {
+            const double debounceSeconds = state.rawHandTracking
+                ? kHandModeSwitchToHandDebounceSeconds
+                : kHandModeSwitchToControllerDebounceSeconds;
+            if (nowSeconds - state.rawStateSinceSeconds >= debounceSeconds) {
+                state.debouncedHandTracking = state.rawHandTracking;
+            }
+        }
+
+        return state.debouncedHandTracking;
+    }
+
     bool LocateAimPoseForHand(HandSide handSide, XrTime displayTime, XrPosef& poseOut) const {
         const XrSpace handSpace = handSide == HandSide::Left ? leftAimSpace_ : rightAimSpace_;
         const XrPath handPath = handSide == HandSide::Left ? leftHandPath_ : rightHandPath_;
@@ -2714,11 +2756,26 @@ private:
         return true;
     }
 
+    bool LocateHandTouchPoint(HandSide handSide, glm::vec3& pointOut) const {
+        const HandJointRenderState& handState =
+            handSide == HandSide::Left ? leftHandJointRender_ : rightHandJointRender_;
+        if (!handState.isActive) {
+            return false;
+        }
+
+        const uint32_t indexTip = static_cast<uint32_t>(XR_HAND_JOINT_INDEX_TIP_EXT);
+        if (indexTip >= XR_HAND_JOINT_COUNT_EXT || handState.tracked[indexTip] == 0) {
+            return false;
+        }
+
+        pointOut = handState.positions[indexTip];
+        return true;
+    }
+
     bool LocateHudTouchPoint(const HudPanelFrame& panel,
-                             const XrPosef& aimPose,
+                             const glm::vec3& touchPoint,
                              glm::vec2& uvOut,
                              float& signedDistanceOut) const {
-        const glm::vec3 touchPoint(aimPose.position.x, aimPose.position.y, aimPose.position.z);
         const glm::vec3 local = touchPoint - panel.position;
         const float u = glm::dot(local, panel.right) / hudWidth_ + 0.5f;
         const float v = glm::dot(local, panel.up) / hudHeight_ + 0.5f;
@@ -2836,20 +2893,17 @@ private:
 
         const HudPanelFrame panel = BuildHudPanelFrame(headPose);
         auto updateHandPointer = [&](HandSide handSide, bool handInteractionActive) {
-            XrPosef aimPose{};
-            if (!LocateAimPoseForHand(handSide, displayTime, aimPose)) {
-                return;
-            }
-
             bool* pointerVisible = handSide == HandSide::Left ? &hudPointerLeftVisible_ : &hudPointerRightVisible_;
             glm::vec2* pointerUv = handSide == HandSide::Left ? &hudPointerLeftUv_ : &hudPointerRightUv_;
             HudPointerMode* pointerMode = handSide == HandSide::Left ? &hudPointerLeftMode_ : &hudPointerRightMode_;
             bool* touchActive = handSide == HandSide::Left ? &hudTouchLeftActive_ : &hudTouchRightActive_;
 
             if (handInteractionActive) {
+                glm::vec3 touchPoint(0.0f);
                 glm::vec2 touchUv(0.0f);
                 float touchDistance = 0.0f;
-                if (LocateHudTouchPoint(panel, aimPose, touchUv, touchDistance)) {
+                if (LocateHandTouchPoint(handSide, touchPoint) &&
+                    LocateHudTouchPoint(panel, touchPoint, touchUv, touchDistance)) {
                     const bool touchHover =
                         touchDistance <= kHudTouchHoverDistance && touchDistance >= -kHudTouchMaxPenetration;
                     *touchActive =
@@ -2860,6 +2914,12 @@ private:
                         *pointerMode = HudPointerMode::Touch;
                     }
                 }
+                return;
+            }
+
+            XrPosef aimPose{};
+            if (!LocateAimPoseForHand(handSide, displayTime, aimPose)) {
+                return;
             }
 
             if (!(*pointerVisible)) {
@@ -2895,7 +2955,9 @@ private:
         }
 
         if (nowSeconds > hudVisibleUntilSeconds_) {
-            return false;
+            SetHudInputFeedback(nowSeconds, "MENU SHOWN");
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
+            return true;
         }
 
         const bool pointerVisible = handSide == HandSide::Left ? hudPointerLeftVisible_ : hudPointerRightVisible_;
@@ -3131,6 +3193,7 @@ private:
     void PollInputActions(double nowSeconds, XrTime displayTime, const XrPosef& headPose) {
         if (!sessionRunning_ || actionSet_ == XR_NULL_HANDLE) {
             hudHandTrackingActive_ = false;
+            ResetHandModeDebounce();
             ClearHandJointRenderState();
             return;
         }
@@ -3145,6 +3208,7 @@ private:
             rightTriggerPressed_ = false;
             leftTriggerPressed_ = false;
             hudHandTrackingActive_ = false;
+            ResetHandModeDebounce();
             hudPointerLeftVisible_ = false;
             hudPointerRightVisible_ = false;
             hudPointerLeftMode_ = HudPointerMode::None;
@@ -3157,8 +3221,12 @@ private:
             return;
         }
 
-        const bool leftHandTrackingActive = IsHandTrackingInputActive(leftHandPath_);
-        const bool rightHandTrackingActive = IsHandTrackingInputActive(rightHandPath_);
+        const bool leftHandTrackingRaw = IsHandTrackingInputActive(leftHandPath_);
+        const bool rightHandTrackingRaw = IsHandTrackingInputActive(rightHandPath_);
+        const bool leftHandTrackingActive =
+            DebounceHandTrackingMode(HandSide::Left, leftHandTrackingRaw, nowSeconds);
+        const bool rightHandTrackingActive =
+            DebounceHandTrackingMode(HandSide::Right, rightHandTrackingRaw, nowSeconds);
         hudHandTrackingActive_ = leftHandTrackingActive || rightHandTrackingActive;
         UpdateHudPointerState(displayTime, headPose, leftHandTrackingActive, rightHandTrackingActive);
 
@@ -3203,16 +3271,17 @@ private:
             handledInput = true;
         }
 
-        if (GetFloatActionPressed(actionToggleProjection_,
-                                  rightHandPath_,
-                                  kTriggerPressThreshold,
-                                  rightTriggerPressed_)) {
-            const bool allowMenuWake = !rightHandTrackingActive || hudPointerRightVisible_;
+        if (rightHandTrackingActive) {
+            rightTriggerPressed_ = false;
+        } else if (GetFloatActionPressed(actionToggleProjection_,
+                                         rightHandPath_,
+                                         kTriggerPressThreshold,
+                                         rightTriggerPressed_)) {
             const bool consumedByHud = ConsumeHudPointerPress(
                 nowSeconds,
                 HandSide::Right,
-                allowMenuWake);
-            if (!consumedByHud && !rightHandTrackingActive) {
+                true);
+            if (!consumedByHud) {
                 projectionMode_ = projectionMode_ == ProjectionMode::FullSphere
                     ? ProjectionMode::FrontDome
                     : ProjectionMode::FullSphere;
@@ -3223,24 +3292,25 @@ private:
                                         ? "RT PROJECTION DOME"
                                         : "RT PROJECTION SPHERE");
             }
-            handledInput |= consumedByHud || !rightHandTrackingActive;
+            handledInput = true;
         }
-        if (GetFloatActionPressed(actionOptionalPack_,
-                                  leftHandPath_,
-                                  kTriggerPressThreshold,
-                                  leftTriggerPressed_)) {
-            const bool allowMenuWake = !leftHandTrackingActive || hudPointerLeftVisible_;
+        if (leftHandTrackingActive) {
+            leftTriggerPressed_ = false;
+        } else if (GetFloatActionPressed(actionOptionalPack_,
+                                         leftHandPath_,
+                                         kTriggerPressThreshold,
+                                         leftTriggerPressed_)) {
             const bool consumedByHud = ConsumeHudPointerPress(
                 nowSeconds,
                 HandSide::Left,
-                allowMenuWake);
-            if (!consumedByHud && !leftHandTrackingActive) {
+                true);
+            if (!consumedByHud) {
                 CallJavaControlMethod("onNativeRequestOptionalCreamPack");
                 lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
                 hudFlashLt_ = kHudFlashPeak;
                 SetHudInputFeedback(nowSeconds, "LT REQUEST PACK");
             }
-            handledInput |= consumedByHud || !leftHandTrackingActive;
+            handledInput = true;
         }
 
         if (handledInput) {
@@ -3420,6 +3490,7 @@ private:
                     hudTouchLeftWasActive_ = false;
                     hudTouchRightWasActive_ = false;
                     hudHandTrackingActive_ = false;
+                    ResetHandModeDebounce();
                     ClearHandJointRenderState();
                     ExtendHudVisibility(lastFrameSeconds_, kHudVisibleOnStartSeconds);
                     LOGI("XR session started.");
@@ -3445,6 +3516,7 @@ private:
                     hudTouchLeftWasActive_ = false;
                     hudTouchRightWasActive_ = false;
                     hudHandTrackingActive_ = false;
+                    ResetHandModeDebounce();
                     ClearHandJointRenderState();
                     LOGI("XR session stopped.");
                 }
@@ -3505,8 +3577,8 @@ private:
                 exitRenderLoop_ = true;
             } else {
                 if (viewCountOutput > 0) {
-                    PollInputActions(nowSeconds, frameState.predictedDisplayTime, xrViews_[0].pose);
                     UpdateHandJointRenderState(frameState.predictedDisplayTime);
+                    PollInputActions(nowSeconds, frameState.predictedDisplayTime, xrViews_[0].pose);
                 } else {
                     hudHandTrackingActive_ = false;
                     hudPointerLeftVisible_ = false;
@@ -3517,6 +3589,7 @@ private:
                     hudTouchRightActive_ = false;
                     hudTouchLeftWasActive_ = false;
                     hudTouchRightWasActive_ = false;
+                    ResetHandModeDebounce();
                     ClearHandJointRenderState();
                 }
                 projectionViews.clear();
@@ -3758,6 +3831,7 @@ private:
         hudTouchLeftWasActive_ = false;
         hudTouchRightWasActive_ = false;
         hudHandTrackingActive_ = false;
+        ResetHandModeDebounce();
         ClearHandJointRenderState();
 
         if (xrInstance_ != XR_NULL_HANDLE) {
@@ -3910,6 +3984,8 @@ private:
     bool hudTouchLeftWasActive_{false};
     bool hudTouchRightWasActive_{false};
     bool hudHandTrackingActive_{false};
+    HandModeDebounceState leftHandModeDebounce_{};
+    HandModeDebounceState rightHandModeDebounce_{};
     HandJointRenderState leftHandJointRender_{};
     HandJointRenderState rightHandJointRender_{};
     glm::vec2 hudPointerLeftUv_{0.5f, 0.5f};
