@@ -158,6 +158,17 @@ This fork still contains the full upstream `libprojectM` build system.
 
 If you use this fork, please link back to upstream projectM and credit the original maintainers.
 
+## Syncing with upstream
+
+Use this flow to pull updates from `projectM-visualizer/projectm` into this repo:
+
+```bash
+git fetch upstream
+git checkout master
+git merge --ff-only upstream/master
+git push origin master
+```
+
 ## More docs
 
 - Quest app integration notes: `apps/quest-openxr-android/README.md`
