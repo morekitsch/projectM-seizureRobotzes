@@ -63,7 +63,7 @@ These properties are polled at runtime (about once per second):
 ```bash
 # HUD placement/size
 adb shell setprop debug.projectm.quest.hud.enabled 1
-adb shell setprop debug.projectm.quest.hud.distance 1.18
+adb shell setprop debug.projectm.quest.hud.distance 0.72
 adb shell setprop debug.projectm.quest.hud.v_offset -0.27
 adb shell setprop debug.projectm.quest.hud.scale 1.0
 
@@ -93,9 +93,10 @@ The app renders a head-locked control HUD in VR with color tiles plus text label
 
 Primary XR interaction (recommended):
 
-1. Aim at a HUD tile with controller ray or hand aim.
-2. Press/select with trigger (controller) or pinch (hand tracking).
-3. If HUD is hidden, first trigger/pinch shows it; next press activates a tile.
+1. Touch HUD tiles directly with tracked hands (near-touch is prioritized when your hand is close).
+2. You can still use aim + pinch for hand tracking, and ray + trigger for controllers.
+3. For hand tracking, pinch only activates HUD-targeted input (off-HUD hand pinches are ignored so system gestures still work).
+4. If HUD is hidden, controller trigger while aiming at HUD shows it; hand interactions activate when targeting/touching HUD.
 
 Legacy controller bindings (still active):
 
@@ -111,6 +112,8 @@ Legacy controller bindings (still active):
 HUD behavior:
 
 - HUD appears at launch and after controller/hand interaction, then auto-hides after a short timeout.
+- When hand tracking is active, HUD distance is automatically reduced (up to `0.50m`) to make direct touch practical.
+- When available, OpenXR hand-joint tracking (`XR_EXT_hand_tracking`) renders tracked hand skeleton/joints for direct-touch feedback.
 - Left/right pointer cursors are rendered on the HUD when aim pose is active.
 
 HUD status includes:

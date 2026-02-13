@@ -2,51 +2,46 @@
 
 Last updated: 2026-02-13
 
-## Current Context
-- Current `HEAD`: `3aa5011bd` (`chore: full workspace checkpoint before major changes`)
-- Functional XR input/UI commit: `cebeef4ca` (`quest-openxr: add hand-tracking HUD interaction and simplify menu`)
-- Branch status: `master` is ahead of `origin/master` by 8 commits.
-- Submodule pointer: `vendor/projectm-eval` -> `a1611be` (`projectm-eval: update scanner artifacts`).
-- Device status: Quest 3 connected over `adb`; latest `installDebug` succeeded and `com.projectm.questxr` is installed.
+## Current State
+- Quest OpenXR menu/input work is close to target behavior.
+- Hand input now supports:
+  - direct touch priority near HUD
+  - ray + pinch fallback
+  - auto-closer HUD distance during hand tracking
+  - OpenXR hand-joint rendering (`XR_EXT_hand_tracking`) for in-world hand presence
+- Controller ray/trigger and legacy button mappings remain active.
 
-## What Was Completed
-- Added hand-tracking interaction path in OpenXR using `XR_EXT_hand_interaction` when available.
-- Added aim pose action + per-hand action spaces, with HUD ray hit-testing and tile activation by trigger/pinch.
-- Kept standard controller mechanisms and legacy direct button mappings active as fallback.
-- Simplified/decluttered HUD text labels and added in-HUD aim/select guidance.
-- Added manifest support for Quest hand tracking:
-  - `oculus.software.handtracking` feature
-  - `com.oculus.permission.HAND_TRACKING`
-  - hand-tracking metadata (`V2.0`, `HIGH`)
-- Updated Quest README to document controller + hand interaction behavior.
-- Verified build/deploy flow:
-  - `:app:assembleDebug` passed
-  - `:app:installDebug` passed
+## Verified This Session
+- `./gradlew :app:assembleDebug` succeeded.
+- `./gradlew :app:installDebug` succeeded on Quest 3 (`2G0YC1ZF9Q01G6`).
+- App launch confirmed with:
+  - `Enabling XR_EXT_hand_interaction for hand gesture input.`
+  - `Enabling XR_EXT_hand_tracking for tracked hand-joint rendering.`
+  - `OpenXR hand trackers initialized.`
 
-## Active TODOs
-- [ ] Do in-headset QA pass for hand tracking:
-  - Verify aim alignment and pinch reliability
-  - Verify HUD show/hide behavior when hidden then triggered
-  - Confirm controller ray + trigger and hand aim + pinch both work in the same session
-- [ ] Re-validate auto-skip thresholds (`min_fps`, `bad_seconds`, `cooldown_seconds`) on known slow presets.
-- [ ] Decide whether to keep or later prune large generated artifacts captured in checkpoint commit `3aa5011bd`.
+## User Feedback (Latest)
+- Current result is improved but still not fully "Meta Quest native" in feel.
+- User wants true OpenXR hand-style interaction/presence; this pass is close but may need one more polish iteration.
 
-## Backlog
-- [ ] Optional: clean up OpenXR struct `next` initializer warnings (non-blocking).
-- [ ] Optional: if needed later, split large checkpoint commit into cleaner logical history before upstreaming.
+## Next Context Priorities
+1. In-headset QA/tuning:
+   - hand-joint visual weight/opacity/size
+   - touch activation depth/hover thresholds
+   - HUD distance/comfort while touching
+2. If still not native enough:
+   - add hand mesh rendering path (Quest extension if available, e.g. `XR_FB_hand_tracking_mesh`)
+3. Keep regression checks for:
+   - controller ray + trigger HUD interaction
+   - legacy direct controller actions
+   - hand ray + pinch fallback
 
-## Superseded / Closed Out-of-Date Notes
-- `be17ec469` is no longer the latest tested HUD state; replaced by `cebeef4ca`.
-- Previous note about "local untracked artifacts intentionally not committed" is out of date; those artifacts were included in `3aa5011bd`.
-- Previous resume target `be17ec469` is superseded by `3aa5011bd` (or `cebeef4ca` for functional-only baseline).
+## Files Changed In This Pass
+- `src/quest-openxr/main.cpp`
+- `apps/quest-openxr-android/README.md`
+- `agents.md`
 
-## Resume Checklist
-1. Choose starting point:
-   - `3aa5011bd` for exact full workspace checkpoint.
-   - `cebeef4ca` for hand-tracking/HUD functional baseline without the checkpoint payload.
-2. Build/install from `apps/quest-openxr-android` with `./gradlew :app:installDebug`.
-3. Run in-headset input matrix:
-   - Controller ray + trigger on HUD tiles
-   - Hand aim + pinch on same HUD tiles
-   - Legacy direct controller buttons (`A/B/X/Y/L3/R3/LT/RT`)
-4. Proceed with major changes from the selected baseline.
+## Workspace Notes
+- Ignore build/runtime noise when committing:
+  - `apps/quest-openxr-android/app/.cxx/...`
+  - `logs/...`
+  - `scripts/...` (if unrelated to this task)

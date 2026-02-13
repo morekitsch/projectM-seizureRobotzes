@@ -58,7 +58,8 @@ constexpr double kPresetSwitchSeconds = 20.0;
 constexpr double kPresetScanIntervalSeconds = 10.0;
 constexpr double kAudioFallbackDelaySeconds = 3.0;
 constexpr size_t kMaxQueuedAudioFrames = 48000 * 2;
-constexpr float kHudDistance = 1.18f;
+constexpr float kHudDistance = 0.72f;
+constexpr float kHudDistanceHandTracking = 0.50f;
 constexpr float kHudVerticalOffset = -0.27f;
 constexpr float kHudWidth = 0.68f;
 constexpr float kHudHeight = 0.34f;
@@ -67,6 +68,9 @@ constexpr double kHudVisibleAfterInteractionSeconds = 6.0;
 constexpr double kHudVisibleAfterStatusChangeSeconds = 3.0;
 constexpr double kHudInputFeedbackSeconds = 1.4;
 constexpr float kTriggerPressThreshold = 0.75f;
+constexpr float kHudTouchHoverDistance = 0.10f;
+constexpr float kHudTouchActivationDistance = 0.030f;
+constexpr float kHudTouchMaxPenetration = 0.025f;
 constexpr float kHudFlashPeak = 1.35f;
 constexpr double kRuntimePropertyPollIntervalSeconds = 1.0;
 constexpr double kPerfGraceAfterPresetSwitchSeconds = 4.0;
@@ -116,6 +120,54 @@ enum class HudButtonId : uint8_t {
     ToggleProjection = 7,
 };
 
+enum class HudPointerMode : uint8_t {
+    None = 0,
+    Ray = 1,
+    Touch = 2,
+};
+
+struct HandBone {
+    XrHandJointEXT from;
+    XrHandJointEXT to;
+};
+
+constexpr std::array<HandBone, 24> kHandBones{{
+    {XR_HAND_JOINT_WRIST_EXT, XR_HAND_JOINT_PALM_EXT},
+
+    {XR_HAND_JOINT_PALM_EXT, XR_HAND_JOINT_THUMB_METACARPAL_EXT},
+    {XR_HAND_JOINT_THUMB_METACARPAL_EXT, XR_HAND_JOINT_THUMB_PROXIMAL_EXT},
+    {XR_HAND_JOINT_THUMB_PROXIMAL_EXT, XR_HAND_JOINT_THUMB_DISTAL_EXT},
+    {XR_HAND_JOINT_THUMB_DISTAL_EXT, XR_HAND_JOINT_THUMB_TIP_EXT},
+
+    {XR_HAND_JOINT_PALM_EXT, XR_HAND_JOINT_INDEX_METACARPAL_EXT},
+    {XR_HAND_JOINT_INDEX_METACARPAL_EXT, XR_HAND_JOINT_INDEX_PROXIMAL_EXT},
+    {XR_HAND_JOINT_INDEX_PROXIMAL_EXT, XR_HAND_JOINT_INDEX_INTERMEDIATE_EXT},
+    {XR_HAND_JOINT_INDEX_INTERMEDIATE_EXT, XR_HAND_JOINT_INDEX_DISTAL_EXT},
+    {XR_HAND_JOINT_INDEX_DISTAL_EXT, XR_HAND_JOINT_INDEX_TIP_EXT},
+
+    {XR_HAND_JOINT_PALM_EXT, XR_HAND_JOINT_MIDDLE_METACARPAL_EXT},
+    {XR_HAND_JOINT_MIDDLE_METACARPAL_EXT, XR_HAND_JOINT_MIDDLE_PROXIMAL_EXT},
+    {XR_HAND_JOINT_MIDDLE_PROXIMAL_EXT, XR_HAND_JOINT_MIDDLE_INTERMEDIATE_EXT},
+    {XR_HAND_JOINT_MIDDLE_INTERMEDIATE_EXT, XR_HAND_JOINT_MIDDLE_DISTAL_EXT},
+    {XR_HAND_JOINT_MIDDLE_DISTAL_EXT, XR_HAND_JOINT_MIDDLE_TIP_EXT},
+
+    {XR_HAND_JOINT_PALM_EXT, XR_HAND_JOINT_RING_METACARPAL_EXT},
+    {XR_HAND_JOINT_RING_METACARPAL_EXT, XR_HAND_JOINT_RING_PROXIMAL_EXT},
+    {XR_HAND_JOINT_RING_PROXIMAL_EXT, XR_HAND_JOINT_RING_INTERMEDIATE_EXT},
+    {XR_HAND_JOINT_RING_INTERMEDIATE_EXT, XR_HAND_JOINT_RING_DISTAL_EXT},
+    {XR_HAND_JOINT_RING_DISTAL_EXT, XR_HAND_JOINT_RING_TIP_EXT},
+
+    {XR_HAND_JOINT_PALM_EXT, XR_HAND_JOINT_LITTLE_METACARPAL_EXT},
+    {XR_HAND_JOINT_LITTLE_METACARPAL_EXT, XR_HAND_JOINT_LITTLE_PROXIMAL_EXT},
+    {XR_HAND_JOINT_LITTLE_PROXIMAL_EXT, XR_HAND_JOINT_LITTLE_INTERMEDIATE_EXT},
+    {XR_HAND_JOINT_LITTLE_INTERMEDIATE_EXT, XR_HAND_JOINT_LITTLE_DISTAL_EXT},
+}};
+
+constexpr std::array<XrHandJointEXT, 2> kHandHighlightJoints{
+    XR_HAND_JOINT_INDEX_TIP_EXT,
+    XR_HAND_JOINT_THUMB_TIP_EXT,
+};
+
 constexpr char kFallbackPreset[] =
     "[preset00]\n"
     "fDecay=0.98\n"
@@ -149,6 +201,12 @@ struct XrSwapchainBundle {
     int32_t width{0};
     int32_t height{0};
     std::vector<XrSwapchainImageOpenGLESKHR> images;
+};
+
+struct HandJointRenderState {
+    bool isActive{false};
+    std::array<glm::vec3, XR_HAND_JOINT_COUNT_EXT> positions{};
+    std::array<uint8_t, XR_HAND_JOINT_COUNT_EXT> tracked{};
 };
 
 enum class AudioMode : int {
@@ -1000,6 +1058,15 @@ private:
         if (!suggestedHandProfile) {
             LOGW("Hand interaction profile binding suggestion failed; hand pinches may be unavailable.");
         }
+        auto cacheProfilePath = [&](const char* profilePath, XrPath& profileOut) {
+            if (XR_FAILED(xrStringToPath(xrInstance_, profilePath, &profileOut))) {
+                profileOut = XR_NULL_PATH;
+            }
+        };
+        cacheProfilePath("/interaction_profiles/meta/touch_controller_plus", controllerPlusProfilePath_);
+        cacheProfilePath("/interaction_profiles/meta/touch_controller_pro", controllerProProfilePath_);
+        cacheProfilePath("/interaction_profiles/oculus/touch_controller", controllerTouchProfilePath_);
+        cacheProfilePath("/interaction_profiles/ext/hand_interaction_ext", handInteractionProfilePath_);
 
         XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
         attachInfo.countActionSets = 1;
@@ -1104,6 +1171,9 @@ private:
     }
 
     bool InitializeOpenXr() {
+        handTrackingExtensionEnabled_ = false;
+        handTrackingReady_ = false;
+
         PFN_xrInitializeLoaderKHR initializeLoader = nullptr;
         xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR",
                               reinterpret_cast<PFN_xrVoidFunction*>(&initializeLoader));
@@ -1162,6 +1232,13 @@ private:
             LOGI("Enabling XR_EXT_hand_interaction for hand gesture input.");
         } else {
             LOGW("XR_EXT_hand_interaction not reported by runtime; hand gesture input may be unavailable.");
+        }
+        if (hasInstanceExtension(XR_EXT_HAND_TRACKING_EXTENSION_NAME)) {
+            requiredExtensions.push_back(XR_EXT_HAND_TRACKING_EXTENSION_NAME);
+            handTrackingExtensionEnabled_ = true;
+            LOGI("Enabling XR_EXT_hand_tracking for tracked hand-joint rendering.");
+        } else {
+            LOGW("XR_EXT_hand_tracking not reported by runtime; tracked hand-joint rendering unavailable.");
         }
 
         XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
@@ -1234,6 +1311,11 @@ private:
         if (XR_FAILED(spaceResult)) {
             LOGE("xrCreateReferenceSpace failed.");
             return false;
+        }
+
+        if (handTrackingExtensionEnabled_ && !InitializeHandTrackers()) {
+            LOGW("OpenXR hand trackers unavailable; continuing without rendered hand joints.");
+            handTrackingReady_ = false;
         }
 
         uint32_t viewCount = 0;
@@ -1434,7 +1516,13 @@ private:
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
 
-        return InitializeHudOverlay();
+        if (!InitializeHudOverlay()) {
+            return false;
+        }
+        if (!InitializeHandOverlay()) {
+            LOGW("Failed to initialize hand overlay renderer.");
+        }
+        return true;
     }
 
     bool InitializeHudOverlay() {
@@ -1482,6 +1570,21 @@ private:
             float pointerMask(vec2 uv, vec2 center, float radius, float feather) {
                 float dist = length(uv - center);
                 return smoothstep(radius + feather, radius - feather, dist);
+            }
+
+            float ringMask(vec2 uv, vec2 center, float outerRadius, float innerRadius, float feather) {
+                float outer = pointerMask(uv, center, outerRadius, feather);
+                float inner = pointerMask(uv, center, innerRadius, feather);
+                return clamp(outer - inner, 0.0, 1.0);
+            }
+
+            float handOutlineMask(vec2 uv, vec2 tip, float handedness) {
+                float palm = ringMask(uv, tip + vec2(0.0, -0.040), 0.058, 0.047, 0.0065);
+                float thumb = ringMask(uv, tip + vec2(handedness * 0.032, -0.026), 0.021, 0.014, 0.0055);
+                float index = ringMask(uv, tip + vec2(handedness * -0.010, -0.008), 0.015, 0.008, 0.0045);
+                float middle = ringMask(uv, tip + vec2(handedness * 0.004, -0.010), 0.015, 0.008, 0.0045);
+                float ring = ringMask(uv, tip + vec2(handedness * 0.018, -0.012), 0.014, 0.0075, 0.0045);
+                return clamp(max(max(palm, thumb), max(index, max(middle, ring))), 0.0, 1.0);
             }
 
             void main() {
@@ -1535,18 +1638,38 @@ private:
                 alpha = max(alpha, textMask);
 
                 if (uPointerLeft.z > 0.5) {
-                    float ring = pointerMask(vUv, uPointerLeft.xy, 0.022, 0.0035) - pointerMask(vUv, uPointerLeft.xy, 0.013, 0.0035);
-                    float core = pointerMask(vUv, uPointerLeft.xy, 0.006, 0.0020);
-                    float mask = clamp(ring + core, 0.0, 1.0);
-                    color = mix(color, vec3(0.30, 0.88, 0.92), mask * 0.90);
-                    alpha = max(alpha, mask * 0.95);
+                    float isTouch = step(1.5, uPointerLeft.w);
+                    float isTouchActive = step(1.5, uPointerLeft.z);
+
+                    float rayRing = ringMask(vUv, uPointerLeft.xy, 0.022, 0.013, 0.0035);
+                    float rayCore = pointerMask(vUv, uPointerLeft.xy, 0.006, 0.0020);
+                    float rayMask = clamp(rayRing + rayCore, 0.0, 1.0) * (1.0 - isTouch);
+                    color = mix(color, vec3(0.30, 0.88, 0.92), rayMask * 0.90);
+                    alpha = max(alpha, rayMask * 0.95);
+
+                    float touchOutline = handOutlineMask(vUv, uPointerLeft.xy, -1.0) * isTouch;
+                    float touchHover = ringMask(vUv, uPointerLeft.xy, 0.020, 0.009, 0.0030) * isTouch;
+                    float touchPress = pointerMask(vUv, uPointerLeft.xy, 0.009, 0.0025) * isTouch * isTouchActive;
+                    float touchMask = clamp(touchOutline + touchHover + touchPress, 0.0, 1.0);
+                    color = mix(color, vec3(0.74, 0.96, 0.98), touchMask * (0.70 + 0.25 * isTouchActive));
+                    alpha = max(alpha, touchMask * 0.92);
                 }
                 if (uPointerRight.z > 0.5) {
-                    float ring = pointerMask(vUv, uPointerRight.xy, 0.022, 0.0035) - pointerMask(vUv, uPointerRight.xy, 0.013, 0.0035);
-                    float core = pointerMask(vUv, uPointerRight.xy, 0.006, 0.0020);
-                    float mask = clamp(ring + core, 0.0, 1.0);
-                    color = mix(color, vec3(0.98, 0.72, 0.30), mask * 0.90);
-                    alpha = max(alpha, mask * 0.95);
+                    float isTouch = step(1.5, uPointerRight.w);
+                    float isTouchActive = step(1.5, uPointerRight.z);
+
+                    float rayRing = ringMask(vUv, uPointerRight.xy, 0.022, 0.013, 0.0035);
+                    float rayCore = pointerMask(vUv, uPointerRight.xy, 0.006, 0.0020);
+                    float rayMask = clamp(rayRing + rayCore, 0.0, 1.0) * (1.0 - isTouch);
+                    color = mix(color, vec3(0.98, 0.72, 0.30), rayMask * 0.90);
+                    alpha = max(alpha, rayMask * 0.95);
+
+                    float touchOutline = handOutlineMask(vUv, uPointerRight.xy, 1.0) * isTouch;
+                    float touchHover = ringMask(vUv, uPointerRight.xy, 0.020, 0.009, 0.0030) * isTouch;
+                    float touchPress = pointerMask(vUv, uPointerRight.xy, 0.009, 0.0025) * isTouch * isTouchActive;
+                    float touchMask = clamp(touchOutline + touchHover + touchPress, 0.0, 1.0);
+                    color = mix(color, vec3(1.00, 0.93, 0.75), touchMask * (0.70 + 0.25 * isTouchActive));
+                    alpha = max(alpha, touchMask * 0.92);
                 }
 
                 fragColor = vec4(color, alpha);
@@ -1626,6 +1749,269 @@ private:
         hudTextDirty_ = true;
 
         return true;
+    }
+
+    bool InitializeHandOverlay() {
+        static const char* kHandVertexShaderSource = R"(
+            #version 300 es
+            precision highp float;
+            layout(location = 0) in vec3 aPosition;
+            uniform mat4 uViewProjection;
+            uniform float uPointSize;
+            void main() {
+                gl_Position = uViewProjection * vec4(aPosition, 1.0);
+                gl_PointSize = uPointSize;
+            }
+        )";
+
+        static const char* kHandFragmentShaderSource = R"(
+            #version 300 es
+            precision mediump float;
+            uniform vec4 uColor;
+            out vec4 fragColor;
+            void main() {
+                fragColor = uColor;
+            }
+        )";
+
+        const GLuint vs = CompileShader(GL_VERTEX_SHADER, kHandVertexShaderSource);
+        const GLuint fs = CompileShader(GL_FRAGMENT_SHADER, kHandFragmentShaderSource);
+        if (vs == 0 || fs == 0) {
+            if (vs != 0) {
+                glDeleteShader(vs);
+            }
+            if (fs != 0) {
+                glDeleteShader(fs);
+            }
+            return false;
+        }
+
+        handProgram_ = LinkProgram(vs, fs);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        if (handProgram_ == 0) {
+            return false;
+        }
+
+        handViewProjectionLoc_ = glGetUniformLocation(handProgram_, "uViewProjection");
+        handColorLoc_ = glGetUniformLocation(handProgram_, "uColor");
+        handPointSizeLoc_ = glGetUniformLocation(handProgram_, "uPointSize");
+        if (handViewProjectionLoc_ < 0 || handColorLoc_ < 0 || handPointSizeLoc_ < 0) {
+            return false;
+        }
+
+        glGenVertexArrays(1, &handVao_);
+        glGenBuffers(1, &handVbo_);
+        if (handVao_ == 0 || handVbo_ == 0) {
+            return false;
+        }
+
+        glBindVertexArray(handVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, handVbo_);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * XR_HAND_JOINT_COUNT_EXT * 2, nullptr, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
+        glBindVertexArray(0);
+        return true;
+    }
+
+    bool InitializeHandTrackers() {
+        if (!handTrackingExtensionEnabled_) {
+            return false;
+        }
+
+        auto loadProc = [&](const char* procName, PFN_xrVoidFunction* procOut) -> bool {
+            *procOut = nullptr;
+            return XR_SUCCEEDED(
+                xrGetInstanceProcAddr(xrInstance_, procName, procOut)) && *procOut != nullptr;
+        };
+
+        PFN_xrVoidFunction createProc = nullptr;
+        PFN_xrVoidFunction destroyProc = nullptr;
+        PFN_xrVoidFunction locateProc = nullptr;
+        if (!loadProc("xrCreateHandTrackerEXT", &createProc) ||
+            !loadProc("xrDestroyHandTrackerEXT", &destroyProc) ||
+            !loadProc("xrLocateHandJointsEXT", &locateProc)) {
+            LOGW("Failed to load XR_EXT_hand_tracking function pointers.");
+            return false;
+        }
+
+        xrCreateHandTrackerEXT_ = reinterpret_cast<PFN_xrCreateHandTrackerEXT>(createProc);
+        xrDestroyHandTrackerEXT_ = reinterpret_cast<PFN_xrDestroyHandTrackerEXT>(destroyProc);
+        xrLocateHandJointsEXT_ = reinterpret_cast<PFN_xrLocateHandJointsEXT>(locateProc);
+
+        XrHandTrackerCreateInfoEXT createInfo{XR_TYPE_HAND_TRACKER_CREATE_INFO_EXT};
+        createInfo.handJointSet = XR_HAND_JOINT_SET_DEFAULT_EXT;
+
+        createInfo.hand = XR_HAND_LEFT_EXT;
+        if (XR_FAILED(xrCreateHandTrackerEXT_(xrSession_, &createInfo, &leftHandTracker_))) {
+            leftHandTracker_ = XR_NULL_HANDLE;
+            LOGW("xrCreateHandTrackerEXT failed for left hand.");
+            return false;
+        }
+
+        createInfo.hand = XR_HAND_RIGHT_EXT;
+        if (XR_FAILED(xrCreateHandTrackerEXT_(xrSession_, &createInfo, &rightHandTracker_))) {
+            if (leftHandTracker_ != XR_NULL_HANDLE) {
+                xrDestroyHandTrackerEXT_(leftHandTracker_);
+                leftHandTracker_ = XR_NULL_HANDLE;
+            }
+            rightHandTracker_ = XR_NULL_HANDLE;
+            LOGW("xrCreateHandTrackerEXT failed for right hand.");
+            return false;
+        }
+
+        handTrackingReady_ = true;
+        LOGI("OpenXR hand trackers initialized.");
+        return true;
+    }
+
+    void ClearHandJointRenderState() {
+        leftHandJointRender_ = {};
+        rightHandJointRender_ = {};
+    }
+
+    void UpdateHandJointRenderState(XrTime displayTime) {
+        ClearHandJointRenderState();
+        if (!handTrackingReady_ ||
+            xrLocateHandJointsEXT_ == nullptr ||
+            xrAppSpace_ == XR_NULL_HANDLE) {
+            return;
+        }
+
+        auto locateHand = [&](XrHandTrackerEXT tracker, HandJointRenderState& handOut) {
+            if (tracker == XR_NULL_HANDLE) {
+                return;
+            }
+
+            std::array<XrHandJointLocationEXT, XR_HAND_JOINT_COUNT_EXT> jointLocations{};
+
+            XrHandJointLocationsEXT locations{XR_TYPE_HAND_JOINT_LOCATIONS_EXT};
+            locations.jointCount = XR_HAND_JOINT_COUNT_EXT;
+            locations.jointLocations = jointLocations.data();
+
+            XrHandJointsLocateInfoEXT locateInfo{XR_TYPE_HAND_JOINTS_LOCATE_INFO_EXT};
+            locateInfo.baseSpace = xrAppSpace_;
+            locateInfo.time = displayTime;
+
+            if (XR_FAILED(xrLocateHandJointsEXT_(tracker, &locateInfo, &locations)) || !locations.isActive) {
+                return;
+            }
+
+            handOut.isActive = true;
+            for (uint32_t i = 0; i < XR_HAND_JOINT_COUNT_EXT; ++i) {
+                const XrSpaceLocationFlags flags = jointLocations[i].locationFlags;
+                const bool tracked = (flags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0;
+                handOut.tracked[i] = tracked ? 1 : 0;
+                if (tracked) {
+                    handOut.positions[i] = glm::vec3(jointLocations[i].pose.position.x,
+                                                     jointLocations[i].pose.position.y,
+                                                     jointLocations[i].pose.position.z);
+                }
+            }
+        };
+
+        locateHand(leftHandTracker_, leftHandJointRender_);
+        locateHand(rightHandTracker_, rightHandJointRender_);
+    }
+
+    void RenderHandJoints(const glm::mat4& viewProjection) {
+        if (handProgram_ == 0 || handVao_ == 0 || handVbo_ == 0) {
+            return;
+        }
+        if (!handTrackingReady_) {
+            return;
+        }
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDisable(GL_DEPTH_TEST);
+        glUseProgram(handProgram_);
+        glUniformMatrix4fv(handViewProjectionLoc_, 1, GL_FALSE, glm::value_ptr(viewProjection));
+        glBindVertexArray(handVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, handVbo_);
+
+        auto drawHand = [&](const HandJointRenderState& hand,
+                            const glm::vec3& lineColor,
+                            const glm::vec3& tipColor) {
+            if (!hand.isActive) {
+                return;
+            }
+
+            std::array<glm::vec3, kHandBones.size() * 2> lineVertices{};
+            GLsizei lineVertexCount = 0;
+            for (const HandBone& bone : kHandBones) {
+                const int from = static_cast<int>(bone.from);
+                const int to = static_cast<int>(bone.to);
+                if (from < 0 || to < 0) {
+                    continue;
+                }
+                if (from >= static_cast<int>(XR_HAND_JOINT_COUNT_EXT) ||
+                    to >= static_cast<int>(XR_HAND_JOINT_COUNT_EXT)) {
+                    continue;
+                }
+                if (hand.tracked[from] == 0 || hand.tracked[to] == 0) {
+                    continue;
+                }
+
+                lineVertices[static_cast<size_t>(lineVertexCount++)] = hand.positions[static_cast<size_t>(from)];
+                lineVertices[static_cast<size_t>(lineVertexCount++)] = hand.positions[static_cast<size_t>(to)];
+            }
+
+            if (lineVertexCount > 0) {
+                glBufferData(GL_ARRAY_BUFFER,
+                             static_cast<GLsizeiptr>(lineVertexCount) * sizeof(glm::vec3),
+                             lineVertices.data(),
+                             GL_DYNAMIC_DRAW);
+                glUniform4f(handColorLoc_, lineColor.r, lineColor.g, lineColor.b, 0.88f);
+                glUniform1f(handPointSizeLoc_, 1.0f);
+                glDrawArrays(GL_LINES, 0, lineVertexCount);
+            }
+
+            std::array<glm::vec3, XR_HAND_JOINT_COUNT_EXT> jointVertices{};
+            GLsizei jointVertexCount = 0;
+            for (uint32_t i = 0; i < XR_HAND_JOINT_COUNT_EXT; ++i) {
+                if (hand.tracked[i] == 0) {
+                    continue;
+                }
+                jointVertices[static_cast<size_t>(jointVertexCount++)] = hand.positions[i];
+            }
+
+            if (jointVertexCount > 0) {
+                glBufferData(GL_ARRAY_BUFFER,
+                             static_cast<GLsizeiptr>(jointVertexCount) * sizeof(glm::vec3),
+                             jointVertices.data(),
+                             GL_DYNAMIC_DRAW);
+                glUniform4f(handColorLoc_, lineColor.r, lineColor.g, lineColor.b, 0.65f);
+                glUniform1f(handPointSizeLoc_, 6.0f);
+                glDrawArrays(GL_POINTS, 0, jointVertexCount);
+            }
+
+            std::array<glm::vec3, kHandHighlightJoints.size()> tipVertices{};
+            GLsizei tipVertexCount = 0;
+            for (const XrHandJointEXT joint : kHandHighlightJoints) {
+                const uint32_t index = static_cast<uint32_t>(joint);
+                if (index >= XR_HAND_JOINT_COUNT_EXT || hand.tracked[index] == 0) {
+                    continue;
+                }
+                tipVertices[static_cast<size_t>(tipVertexCount++)] = hand.positions[index];
+            }
+
+            if (tipVertexCount > 0) {
+                glBufferData(GL_ARRAY_BUFFER,
+                             static_cast<GLsizeiptr>(tipVertexCount) * sizeof(glm::vec3),
+                             tipVertices.data(),
+                             GL_DYNAMIC_DRAW);
+                glUniform4f(handColorLoc_, tipColor.r, tipColor.g, tipColor.b, 0.95f);
+                glUniform1f(handPointSizeLoc_, 11.0f);
+                glDrawArrays(GL_POINTS, 0, tipVertexCount);
+            }
+        };
+
+        drawHand(leftHandJointRender_, glm::vec3(0.70f, 0.93f, 0.98f), glm::vec3(0.92f, 0.99f, 1.00f));
+        drawHand(rightHandJointRender_, glm::vec3(1.00f, 0.86f, 0.64f), glm::vec3(1.00f, 0.96f, 0.86f));
+
+        glBindVertexArray(0);
     }
 
     void BuildSphereMesh() {
@@ -2136,7 +2522,7 @@ private:
         DrawHudTextCentered(kHudRectTogglePlay.minU, kHudRectTogglePlay.maxU, kHudRectTogglePlay.minV, kHudRectTogglePlay.maxV, "PLAY PAUSE", kHudActionScale);
         DrawHudTextCentered(kHudRectNextTrack.minU, kHudRectNextTrack.maxU, kHudRectNextTrack.minV, kHudRectNextTrack.maxV, "NEXT TRACK", kHudActionScale);
         DrawHudTextCentered(0.07f, 0.93f, 0.54f, 0.60f, hudRenderedInputFeedbackLabel_, kHudInputScale, inputFeedbackActive ? 255 : 170);
-        DrawHudTextCentered(0.07f, 0.93f, 0.25f, 0.29f, "AIM + PINCH/TRIGGER", kHudInputScale, 190);
+        DrawHudTextCentered(0.07f, 0.93f, 0.25f, 0.29f, "TOUCH OR AIM+PINCH", kHudInputScale, 190);
         DrawHudTextCentered(kHudRectPack.minU, kHudRectPack.maxU, kHudRectPack.minV, kHudRectPack.maxV, "PACK", kHudTriggerScale);
         DrawHudTextCentered(kHudRectCenter.minU, kHudRectCenter.maxU, kHudRectCenter.minV, kHudRectCenter.maxV, "AUDIO MODE", kHudTriggerScale);
         DrawHudTextCentered(kHudRectProjection.minU, kHudRectProjection.maxU, kHudRectProjection.minV, kHudRectProjection.maxV, "PROJECTION", kHudTriggerScale);
@@ -2202,14 +2588,22 @@ private:
         glm::vec3 normal;
     };
 
+    float EffectiveHudDistance() const {
+        if (!hudHandTrackingActive_) {
+            return hudDistance_;
+        }
+        return std::min(hudDistance_, kHudDistanceHandTracking);
+    }
+
     HudPanelFrame BuildHudPanelFrame(const XrPosef& headPose) const {
         const glm::vec3 headPosition(headPose.position.x, headPose.position.y, headPose.position.z);
         const glm::quat headOrientation(headPose.orientation.w,
                                         headPose.orientation.x,
                                         headPose.orientation.y,
                                         headPose.orientation.z);
+        const float hudDistance = EffectiveHudDistance();
         HudPanelFrame panel{};
-        panel.position = headPosition + headOrientation * glm::vec3(0.0f, hudVerticalOffset_, -hudDistance_);
+        panel.position = headPosition + headOrientation * glm::vec3(0.0f, hudVerticalOffset_, -hudDistance);
         panel.right = glm::normalize(headOrientation * glm::vec3(1.0f, 0.0f, 0.0f));
         panel.up = glm::normalize(headOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
         panel.normal = glm::normalize(headOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
@@ -2228,6 +2622,40 @@ private:
             return false;
         }
         return state.isActive;
+    }
+
+    XrPath GetCurrentInteractionProfilePath(XrPath handPath) const {
+        if (xrSession_ == XR_NULL_HANDLE || handPath == XR_NULL_PATH) {
+            return XR_NULL_PATH;
+        }
+        XrInteractionProfileState profileState{XR_TYPE_INTERACTION_PROFILE_STATE};
+        if (XR_FAILED(xrGetCurrentInteractionProfile(xrSession_, handPath, &profileState))) {
+            return XR_NULL_PATH;
+        }
+        return profileState.interactionProfile;
+    }
+
+    bool IsControllerInteractionProfile(XrPath interactionProfilePath) const {
+        if (interactionProfilePath == XR_NULL_PATH) {
+            return false;
+        }
+        return (controllerPlusProfilePath_ != XR_NULL_PATH && interactionProfilePath == controllerPlusProfilePath_) ||
+            (controllerProProfilePath_ != XR_NULL_PATH && interactionProfilePath == controllerProProfilePath_) ||
+            (controllerTouchProfilePath_ != XR_NULL_PATH && interactionProfilePath == controllerTouchProfilePath_);
+    }
+
+    bool IsHandTrackingInputActive(XrPath handPath) const {
+        const XrPath interactionProfilePath = GetCurrentInteractionProfilePath(handPath);
+        if (interactionProfilePath == XR_NULL_PATH) {
+            return false;
+        }
+        if (handInteractionProfilePath_ != XR_NULL_PATH &&
+            interactionProfilePath == handInteractionProfilePath_) {
+            return true;
+        }
+
+        // Some Quest runtime builds can expose a non-controller hand profile path.
+        return !IsControllerInteractionProfile(interactionProfilePath);
     }
 
     bool LocateAimPoseForHand(HandSide handSide, XrTime displayTime, XrPosef& poseOut) const {
@@ -2282,6 +2710,23 @@ private:
             return false;
         }
 
+        uvOut = glm::vec2(u, v);
+        return true;
+    }
+
+    bool LocateHudTouchPoint(const HudPanelFrame& panel,
+                             const XrPosef& aimPose,
+                             glm::vec2& uvOut,
+                             float& signedDistanceOut) const {
+        const glm::vec3 touchPoint(aimPose.position.x, aimPose.position.y, aimPose.position.z);
+        const glm::vec3 local = touchPoint - panel.position;
+        const float u = glm::dot(local, panel.right) / hudWidth_ + 0.5f;
+        const float v = glm::dot(local, panel.up) / hudHeight_ + 0.5f;
+        if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
+            return false;
+        }
+
+        signedDistanceOut = glm::dot(local, panel.normal);
         uvOut = glm::vec2(u, v);
         return true;
     }
@@ -2374,35 +2819,110 @@ private:
         ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
     }
 
-    void UpdateHudPointerState(XrTime displayTime, const XrPosef& headPose) {
+    void UpdateHudPointerState(XrTime displayTime,
+                               const XrPosef& headPose,
+                               bool leftHandInteractionActive,
+                               bool rightHandInteractionActive) {
         hudPointerLeftVisible_ = false;
         hudPointerRightVisible_ = false;
+        hudPointerLeftMode_ = HudPointerMode::None;
+        hudPointerRightMode_ = HudPointerMode::None;
+        hudTouchLeftActive_ = false;
+        hudTouchRightActive_ = false;
 
         if (!hudEnabled_) {
             return;
         }
 
         const HudPanelFrame panel = BuildHudPanelFrame(headPose);
-        XrPosef aimPose{};
-        glm::vec2 uv(0.0f);
+        auto updateHandPointer = [&](HandSide handSide, bool handInteractionActive) {
+            XrPosef aimPose{};
+            if (!LocateAimPoseForHand(handSide, displayTime, aimPose)) {
+                return;
+            }
 
-        if (LocateAimPoseForHand(HandSide::Left, displayTime, aimPose) && RaycastHudPanel(panel, aimPose, uv)) {
-            hudPointerLeftVisible_ = true;
-            hudPointerLeftUv_ = uv;
-        }
+            bool* pointerVisible = handSide == HandSide::Left ? &hudPointerLeftVisible_ : &hudPointerRightVisible_;
+            glm::vec2* pointerUv = handSide == HandSide::Left ? &hudPointerLeftUv_ : &hudPointerRightUv_;
+            HudPointerMode* pointerMode = handSide == HandSide::Left ? &hudPointerLeftMode_ : &hudPointerRightMode_;
+            bool* touchActive = handSide == HandSide::Left ? &hudTouchLeftActive_ : &hudTouchRightActive_;
 
-        if (LocateAimPoseForHand(HandSide::Right, displayTime, aimPose) && RaycastHudPanel(panel, aimPose, uv)) {
-            hudPointerRightVisible_ = true;
-            hudPointerRightUv_ = uv;
-        }
+            if (handInteractionActive) {
+                glm::vec2 touchUv(0.0f);
+                float touchDistance = 0.0f;
+                if (LocateHudTouchPoint(panel, aimPose, touchUv, touchDistance)) {
+                    const bool touchHover =
+                        touchDistance <= kHudTouchHoverDistance && touchDistance >= -kHudTouchMaxPenetration;
+                    *touchActive =
+                        touchDistance <= kHudTouchActivationDistance && touchDistance >= -kHudTouchMaxPenetration;
+                    if (touchHover) {
+                        *pointerVisible = true;
+                        *pointerUv = touchUv;
+                        *pointerMode = HudPointerMode::Touch;
+                    }
+                }
+            }
+
+            if (!(*pointerVisible)) {
+                glm::vec2 rayUv(0.0f);
+                if (RaycastHudPanel(panel, aimPose, rayUv)) {
+                    *pointerVisible = true;
+                    *pointerUv = rayUv;
+                    *pointerMode = HudPointerMode::Ray;
+                }
+            }
+        };
+
+        updateHandPointer(HandSide::Left, leftHandInteractionActive);
+        updateHandPointer(HandSide::Right, rightHandInteractionActive);
     }
 
-    bool ConsumeHudPointerPress(double nowSeconds, HandSide handSide) {
+    bool ConsumeHudDirectTouchPress(double nowSeconds, HandSide handSide) {
+        if (!hudEnabled_) {
+            return false;
+        }
+
+        const bool touchActive = handSide == HandSide::Left ? hudTouchLeftActive_ : hudTouchRightActive_;
+        bool& touchWasActive = handSide == HandSide::Left ? hudTouchLeftWasActive_ : hudTouchRightWasActive_;
+        if (!touchActive) {
+            touchWasActive = false;
+            return false;
+        }
+
+        const bool touchJustPressed = !touchWasActive;
+        touchWasActive = true;
+        if (!touchJustPressed) {
+            return false;
+        }
+
+        if (nowSeconds > hudVisibleUntilSeconds_) {
+            return false;
+        }
+
+        const bool pointerVisible = handSide == HandSide::Left ? hudPointerLeftVisible_ : hudPointerRightVisible_;
+        const HudPointerMode pointerMode = handSide == HandSide::Left ? hudPointerLeftMode_ : hudPointerRightMode_;
+        if (!pointerVisible || pointerMode != HudPointerMode::Touch) {
+            return false;
+        }
+
+        const glm::vec2 pointerUv = handSide == HandSide::Left ? hudPointerLeftUv_ : hudPointerRightUv_;
+        const HudButtonId button = ResolveHudButton(pointerUv);
+        if (button == HudButtonId::None) {
+            return false;
+        }
+
+        ExecuteHudButton(button, nowSeconds);
+        return true;
+    }
+
+    bool ConsumeHudPointerPress(double nowSeconds, HandSide handSide, bool allowMenuWake) {
         if (!hudEnabled_) {
             return false;
         }
 
         if (nowSeconds > hudVisibleUntilSeconds_) {
+            if (!allowMenuWake) {
+                return false;
+            }
             SetHudInputFeedback(nowSeconds, "MENU SHOWN");
             ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
             return true;
@@ -2610,6 +3130,8 @@ private:
 
     void PollInputActions(double nowSeconds, XrTime displayTime, const XrPosef& headPose) {
         if (!sessionRunning_ || actionSet_ == XR_NULL_HANDLE) {
+            hudHandTrackingActive_ = false;
+            ClearHandJointRenderState();
             return;
         }
 
@@ -2622,14 +3144,28 @@ private:
         if (XR_FAILED(xrSyncActions(xrSession_, &syncInfo))) {
             rightTriggerPressed_ = false;
             leftTriggerPressed_ = false;
+            hudHandTrackingActive_ = false;
             hudPointerLeftVisible_ = false;
             hudPointerRightVisible_ = false;
+            hudPointerLeftMode_ = HudPointerMode::None;
+            hudPointerRightMode_ = HudPointerMode::None;
+            hudTouchLeftActive_ = false;
+            hudTouchRightActive_ = false;
+            hudTouchLeftWasActive_ = false;
+            hudTouchRightWasActive_ = false;
+            ClearHandJointRenderState();
             return;
         }
 
-        UpdateHudPointerState(displayTime, headPose);
+        const bool leftHandTrackingActive = IsHandTrackingInputActive(leftHandPath_);
+        const bool rightHandTrackingActive = IsHandTrackingInputActive(rightHandPath_);
+        hudHandTrackingActive_ = leftHandTrackingActive || rightHandTrackingActive;
+        UpdateHudPointerState(displayTime, headPose, leftHandTrackingActive, rightHandTrackingActive);
 
         bool handledInput = false;
+        handledInput |= ConsumeHudDirectTouchPress(nowSeconds, HandSide::Left);
+        handledInput |= ConsumeHudDirectTouchPress(nowSeconds, HandSide::Right);
+
         if (GetActionPressed(actionNextPreset_)) {
             SwitchPresetRelative(+1, true);
             hudFlashA_ = kHudFlashPeak;
@@ -2671,7 +3207,12 @@ private:
                                   rightHandPath_,
                                   kTriggerPressThreshold,
                                   rightTriggerPressed_)) {
-            if (!ConsumeHudPointerPress(nowSeconds, HandSide::Right)) {
+            const bool allowMenuWake = !rightHandTrackingActive || hudPointerRightVisible_;
+            const bool consumedByHud = ConsumeHudPointerPress(
+                nowSeconds,
+                HandSide::Right,
+                allowMenuWake);
+            if (!consumedByHud && !rightHandTrackingActive) {
                 projectionMode_ = projectionMode_ == ProjectionMode::FullSphere
                     ? ProjectionMode::FrontDome
                     : ProjectionMode::FullSphere;
@@ -2682,19 +3223,24 @@ private:
                                         ? "RT PROJECTION DOME"
                                         : "RT PROJECTION SPHERE");
             }
-            handledInput = true;
+            handledInput |= consumedByHud || !rightHandTrackingActive;
         }
         if (GetFloatActionPressed(actionOptionalPack_,
                                   leftHandPath_,
                                   kTriggerPressThreshold,
                                   leftTriggerPressed_)) {
-            if (!ConsumeHudPointerPress(nowSeconds, HandSide::Left)) {
+            const bool allowMenuWake = !leftHandTrackingActive || hudPointerLeftVisible_;
+            const bool consumedByHud = ConsumeHudPointerPress(
+                nowSeconds,
+                HandSide::Left,
+                allowMenuWake);
+            if (!consumedByHud && !leftHandTrackingActive) {
                 CallJavaControlMethod("onNativeRequestOptionalCreamPack");
                 lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
                 hudFlashLt_ = kHudFlashPeak;
                 SetHudInputFeedback(nowSeconds, "LT REQUEST PACK");
             }
-            handledInput = true;
+            handledInput |= consumedByHud || !leftHandTrackingActive;
         }
 
         if (handledInput) {
@@ -2743,7 +3289,7 @@ private:
 
         const glm::vec3 basePosition(pose.position.x, pose.position.y, pose.position.z);
         const glm::quat baseOrientation(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
-        const glm::vec3 panelOffset = baseOrientation * glm::vec3(0.0f, hudVerticalOffset_, -hudDistance_);
+        const glm::vec3 panelOffset = baseOrientation * glm::vec3(0.0f, hudVerticalOffset_, -EffectiveHudDistance());
         const glm::vec3 panelPosition = basePosition + panelOffset;
 
         glm::mat4 model = glm::translate(glm::mat4(1.0f), panelPosition) * glm::mat4_cast(baseOrientation);
@@ -2769,16 +3315,24 @@ private:
                     projectionMode_ == ProjectionMode::FrontDome ? 1.0f : 0.0f,
                     currentMediaPlaying_ ? 1.0f : 0.0f,
                     0.0f);
+        const bool leftTouchMode = hudPointerLeftMode_ == HudPointerMode::Touch;
+        const bool rightTouchMode = hudPointerRightMode_ == HudPointerMode::Touch;
+        const float leftPointerState = !hudPointerLeftVisible_
+            ? 0.0f
+            : (leftTouchMode && hudTouchLeftActive_ ? 2.0f : 1.0f);
+        const float rightPointerState = !hudPointerRightVisible_
+            ? 0.0f
+            : (rightTouchMode && hudTouchRightActive_ ? 2.0f : 1.0f);
         glUniform4f(hudPointerLeftLoc_,
                     hudPointerLeftUv_.x,
                     hudPointerLeftUv_.y,
-                    hudPointerLeftVisible_ ? 1.0f : 0.0f,
-                    0.0f);
+                    leftPointerState,
+                    static_cast<float>(static_cast<int>(hudPointerLeftMode_)));
         glUniform4f(hudPointerRightLoc_,
                     hudPointerRightUv_.x,
                     hudPointerRightUv_.y,
-                    hudPointerRightVisible_ ? 1.0f : 0.0f,
-                    0.0f);
+                    rightPointerState,
+                    static_cast<float>(static_cast<int>(hudPointerRightMode_)));
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
         glUniform1i(hudTextSamplerLoc_, 1);
@@ -2859,6 +3413,14 @@ private:
                     leftTriggerPressed_ = false;
                     hudPointerLeftVisible_ = false;
                     hudPointerRightVisible_ = false;
+                    hudPointerLeftMode_ = HudPointerMode::None;
+                    hudPointerRightMode_ = HudPointerMode::None;
+                    hudTouchLeftActive_ = false;
+                    hudTouchRightActive_ = false;
+                    hudTouchLeftWasActive_ = false;
+                    hudTouchRightWasActive_ = false;
+                    hudHandTrackingActive_ = false;
+                    ClearHandJointRenderState();
                     ExtendHudVisibility(lastFrameSeconds_, kHudVisibleOnStartSeconds);
                     LOGI("XR session started.");
                 } else {
@@ -2876,6 +3438,14 @@ private:
                     leftTriggerPressed_ = false;
                     hudPointerLeftVisible_ = false;
                     hudPointerRightVisible_ = false;
+                    hudPointerLeftMode_ = HudPointerMode::None;
+                    hudPointerRightMode_ = HudPointerMode::None;
+                    hudTouchLeftActive_ = false;
+                    hudTouchRightActive_ = false;
+                    hudTouchLeftWasActive_ = false;
+                    hudTouchRightWasActive_ = false;
+                    hudHandTrackingActive_ = false;
+                    ClearHandJointRenderState();
                     LOGI("XR session stopped.");
                 }
                 break;
@@ -2936,9 +3506,18 @@ private:
             } else {
                 if (viewCountOutput > 0) {
                     PollInputActions(nowSeconds, frameState.predictedDisplayTime, xrViews_[0].pose);
+                    UpdateHandJointRenderState(frameState.predictedDisplayTime);
                 } else {
+                    hudHandTrackingActive_ = false;
                     hudPointerLeftVisible_ = false;
                     hudPointerRightVisible_ = false;
+                    hudPointerLeftMode_ = HudPointerMode::None;
+                    hudPointerRightMode_ = HudPointerMode::None;
+                    hudTouchLeftActive_ = false;
+                    hudTouchRightActive_ = false;
+                    hudTouchLeftWasActive_ = false;
+                    hudTouchRightWasActive_ = false;
+                    ClearHandJointRenderState();
                 }
                 projectionViews.clear();
                 projectionViews.reserve(viewCountOutput);
@@ -2993,6 +3572,7 @@ private:
                     glBindVertexArray(0);
 
                     RenderHud(projection, view, xrViews_[viewIndex].pose, nowSeconds);
+                    RenderHandJoints(viewProjection);
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
                     XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -3087,6 +3667,18 @@ private:
             hudTextTexture_ = 0;
         }
         hudTextPixels_.clear();
+        if (handVbo_ != 0) {
+            glDeleteBuffers(1, &handVbo_);
+            handVbo_ = 0;
+        }
+        if (handVao_ != 0) {
+            glDeleteVertexArrays(1, &handVao_);
+            handVao_ = 0;
+        }
+        if (handProgram_ != 0) {
+            glDeleteProgram(handProgram_);
+            handProgram_ = 0;
+        }
 
         if (swapchainFramebuffer_ != 0) {
             glDeleteFramebuffers(1, &swapchainFramebuffer_);
@@ -3101,6 +3693,15 @@ private:
             swapchain.images.clear();
         }
         swapchains_.clear();
+
+        if (leftHandTracker_ != XR_NULL_HANDLE && xrDestroyHandTrackerEXT_ != nullptr) {
+            xrDestroyHandTrackerEXT_(leftHandTracker_);
+            leftHandTracker_ = XR_NULL_HANDLE;
+        }
+        if (rightHandTracker_ != XR_NULL_HANDLE && xrDestroyHandTrackerEXT_ != nullptr) {
+            xrDestroyHandTrackerEXT_(rightHandTracker_);
+            rightHandTracker_ = XR_NULL_HANDLE;
+        }
 
         if (leftAimSpace_ != XR_NULL_HANDLE) {
             xrDestroySpace(leftAimSpace_);
@@ -3139,8 +3740,25 @@ private:
         }
         leftHandPath_ = XR_NULL_PATH;
         rightHandPath_ = XR_NULL_PATH;
+        controllerPlusProfilePath_ = XR_NULL_PATH;
+        controllerProProfilePath_ = XR_NULL_PATH;
+        controllerTouchProfilePath_ = XR_NULL_PATH;
+        handInteractionProfilePath_ = XR_NULL_PATH;
+        handTrackingExtensionEnabled_ = false;
+        handTrackingReady_ = false;
+        xrCreateHandTrackerEXT_ = nullptr;
+        xrDestroyHandTrackerEXT_ = nullptr;
+        xrLocateHandJointsEXT_ = nullptr;
         hudPointerLeftVisible_ = false;
         hudPointerRightVisible_ = false;
+        hudPointerLeftMode_ = HudPointerMode::None;
+        hudPointerRightMode_ = HudPointerMode::None;
+        hudTouchLeftActive_ = false;
+        hudTouchRightActive_ = false;
+        hudTouchLeftWasActive_ = false;
+        hudTouchRightWasActive_ = false;
+        hudHandTrackingActive_ = false;
+        ClearHandJointRenderState();
 
         if (xrInstance_ != XR_NULL_HANDLE) {
             xrDestroyInstance(xrInstance_);
@@ -3184,6 +3802,15 @@ private:
     XrSessionState xrSessionState_{XR_SESSION_STATE_UNKNOWN};
     XrPath leftHandPath_{XR_NULL_PATH};
     XrPath rightHandPath_{XR_NULL_PATH};
+    XrPath controllerPlusProfilePath_{XR_NULL_PATH};
+    XrPath controllerProProfilePath_{XR_NULL_PATH};
+    XrPath controllerTouchProfilePath_{XR_NULL_PATH};
+    XrPath handInteractionProfilePath_{XR_NULL_PATH};
+    bool handTrackingExtensionEnabled_{false};
+    bool handTrackingReady_{false};
+    PFN_xrCreateHandTrackerEXT xrCreateHandTrackerEXT_{nullptr};
+    PFN_xrDestroyHandTrackerEXT xrDestroyHandTrackerEXT_{nullptr};
+    PFN_xrLocateHandJointsEXT xrLocateHandJointsEXT_{nullptr};
     XrActionSet actionSet_{XR_NULL_HANDLE};
     XrAction actionNextPreset_{XR_NULL_HANDLE};
     XrAction actionPrevPreset_{XR_NULL_HANDLE};
@@ -3196,6 +3823,8 @@ private:
     XrAction actionAimPose_{XR_NULL_HANDLE};
     XrSpace leftAimSpace_{XR_NULL_HANDLE};
     XrSpace rightAimSpace_{XR_NULL_HANDLE};
+    XrHandTrackerEXT leftHandTracker_{XR_NULL_HANDLE};
+    XrHandTrackerEXT rightHandTracker_{XR_NULL_HANDLE};
 
     std::vector<XrViewConfigurationView> viewConfigs_;
     std::vector<XrView> xrViews_;
@@ -3207,6 +3836,12 @@ private:
     GLint uViewProjectionLoc_{-1};
     GLint uTextureLoc_{-1};
     GLint uProjectionModeLoc_{-1};
+    GLuint handProgram_{0};
+    GLuint handVao_{0};
+    GLuint handVbo_{0};
+    GLint handViewProjectionLoc_{-1};
+    GLint handColorLoc_{-1};
+    GLint handPointSizeLoc_{-1};
     GLuint hudProgram_{0};
     GLuint hudVao_{0};
     GLuint hudVbo_{0};
@@ -3268,6 +3903,15 @@ private:
     bool leftTriggerPressed_{false};
     bool hudPointerLeftVisible_{false};
     bool hudPointerRightVisible_{false};
+    HudPointerMode hudPointerLeftMode_{HudPointerMode::None};
+    HudPointerMode hudPointerRightMode_{HudPointerMode::None};
+    bool hudTouchLeftActive_{false};
+    bool hudTouchRightActive_{false};
+    bool hudTouchLeftWasActive_{false};
+    bool hudTouchRightWasActive_{false};
+    bool hudHandTrackingActive_{false};
+    HandJointRenderState leftHandJointRender_{};
+    HandJointRenderState rightHandJointRender_{};
     glm::vec2 hudPointerLeftUv_{0.5f, 0.5f};
     glm::vec2 hudPointerRightUv_{0.5f, 0.5f};
     double hudVisibleUntilSeconds_{kHudVisibleOnStartSeconds};
