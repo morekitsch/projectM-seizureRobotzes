@@ -73,7 +73,9 @@ constexpr double kHandModeSwitchToHandDebounceSeconds = 0.08;
 constexpr double kHandModeSwitchToControllerDebounceSeconds = 0.16;
 constexpr float kHudTouchHoverDistance = 0.030f;
 constexpr float kHudTouchActivationDistance = 0.010f;
+constexpr float kHudTouchReleaseDistance = 0.018f;
 constexpr float kHudTouchMaxPenetration = 0.015f;
+constexpr float kHudTouchReleaseMaxPenetration = 0.028f;
 constexpr float kHudTouchForwardOffset = 0.007f;
 constexpr float kHudFlashPeak = 1.35f;
 constexpr double kRuntimePropertyPollIntervalSeconds = 1.0;
@@ -2671,6 +2673,19 @@ private:
         rightHandModeDebounce_ = {};
     }
 
+    void ResetHudPointerAndTouchState() {
+        hudPointerLeftVisible_ = false;
+        hudPointerRightVisible_ = false;
+        hudPointerLeftMode_ = HudPointerMode::None;
+        hudPointerRightMode_ = HudPointerMode::None;
+        hudTouchLeftActive_ = false;
+        hudTouchRightActive_ = false;
+        hudTouchLeftWasActive_ = false;
+        hudTouchRightWasActive_ = false;
+        hudTouchLeftLatched_ = false;
+        hudTouchRightLatched_ = false;
+    }
+
     bool DebounceHandTrackingMode(HandSide handSide, bool rawHandTracking, double nowSeconds) {
         HandModeDebounceState& state =
             handSide == HandSide::Left ? leftHandModeDebounce_ : rightHandModeDebounce_;
@@ -2939,6 +2954,8 @@ private:
         hudTouchRightActive_ = false;
 
         if (!hudEnabled_) {
+            hudTouchLeftLatched_ = false;
+            hudTouchRightLatched_ = false;
             return;
         }
 
@@ -2948,6 +2965,7 @@ private:
             glm::vec2* pointerUv = handSide == HandSide::Left ? &hudPointerLeftUv_ : &hudPointerRightUv_;
             HudPointerMode* pointerMode = handSide == HandSide::Left ? &hudPointerLeftMode_ : &hudPointerRightMode_;
             bool* touchActive = handSide == HandSide::Left ? &hudTouchLeftActive_ : &hudTouchRightActive_;
+            bool* touchLatched = handSide == HandSide::Left ? &hudTouchLeftLatched_ : &hudTouchRightLatched_;
 
             if (handInteractionActive) {
                 glm::vec3 touchPoint(0.0f);
@@ -2957,17 +2975,25 @@ private:
                     LocateHudTouchPoint(panel, touchPoint, touchUv, touchDistance)) {
                     const bool touchHover =
                         touchDistance <= kHudTouchHoverDistance && touchDistance >= -kHudTouchMaxPenetration;
-                    *touchActive =
+                    const bool touchAcquire =
                         touchDistance <= kHudTouchActivationDistance && touchDistance >= -kHudTouchMaxPenetration;
-                    if (touchHover) {
+                    const bool touchRelease =
+                        touchDistance <= kHudTouchReleaseDistance &&
+                        touchDistance >= -kHudTouchReleaseMaxPenetration;
+                    *touchActive = *touchLatched ? touchRelease : touchAcquire;
+                    *touchLatched = *touchActive;
+                    if (touchHover || *touchActive) {
                         *pointerVisible = true;
                         *pointerUv = touchUv;
                         *pointerMode = HudPointerMode::Touch;
                     }
+                } else {
+                    *touchLatched = false;
                 }
                 return;
             }
 
+            *touchLatched = false;
             XrPosef aimPose{};
             if (!LocateAimPoseForHand(handSide, displayTime, aimPose)) {
                 return;
@@ -3245,6 +3271,7 @@ private:
         if (!sessionRunning_ || actionSet_ == XR_NULL_HANDLE) {
             hudHandTrackingActive_ = false;
             ResetHandModeDebounce();
+            ResetHudPointerAndTouchState();
             ClearHandJointRenderState();
             return;
         }
@@ -3260,14 +3287,7 @@ private:
             leftTriggerPressed_ = false;
             hudHandTrackingActive_ = false;
             ResetHandModeDebounce();
-            hudPointerLeftVisible_ = false;
-            hudPointerRightVisible_ = false;
-            hudPointerLeftMode_ = HudPointerMode::None;
-            hudPointerRightMode_ = HudPointerMode::None;
-            hudTouchLeftActive_ = false;
-            hudTouchRightActive_ = false;
-            hudTouchLeftWasActive_ = false;
-            hudTouchRightWasActive_ = false;
+            ResetHudPointerAndTouchState();
             ClearHandJointRenderState();
             return;
         }
@@ -3532,14 +3552,7 @@ private:
                     lastRuntimePropertyPollSeconds_ = -1000.0;
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
-                    hudPointerLeftVisible_ = false;
-                    hudPointerRightVisible_ = false;
-                    hudPointerLeftMode_ = HudPointerMode::None;
-                    hudPointerRightMode_ = HudPointerMode::None;
-                    hudTouchLeftActive_ = false;
-                    hudTouchRightActive_ = false;
-                    hudTouchLeftWasActive_ = false;
-                    hudTouchRightWasActive_ = false;
+                    ResetHudPointerAndTouchState();
                     hudHandTrackingActive_ = false;
                     ResetHandModeDebounce();
                     ClearHandJointRenderState();
@@ -3558,14 +3571,7 @@ private:
                     sessionRunning_ = false;
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
-                    hudPointerLeftVisible_ = false;
-                    hudPointerRightVisible_ = false;
-                    hudPointerLeftMode_ = HudPointerMode::None;
-                    hudPointerRightMode_ = HudPointerMode::None;
-                    hudTouchLeftActive_ = false;
-                    hudTouchRightActive_ = false;
-                    hudTouchLeftWasActive_ = false;
-                    hudTouchRightWasActive_ = false;
+                    ResetHudPointerAndTouchState();
                     hudHandTrackingActive_ = false;
                     ResetHandModeDebounce();
                     ClearHandJointRenderState();
@@ -3634,14 +3640,7 @@ private:
                     PollInputActions(nowSeconds, frameState.predictedDisplayTime, centerHeadPose);
                 } else {
                     hudHandTrackingActive_ = false;
-                    hudPointerLeftVisible_ = false;
-                    hudPointerRightVisible_ = false;
-                    hudPointerLeftMode_ = HudPointerMode::None;
-                    hudPointerRightMode_ = HudPointerMode::None;
-                    hudTouchLeftActive_ = false;
-                    hudTouchRightActive_ = false;
-                    hudTouchLeftWasActive_ = false;
-                    hudTouchRightWasActive_ = false;
+                    ResetHudPointerAndTouchState();
                     ResetHandModeDebounce();
                     ClearHandJointRenderState();
                 }
@@ -3875,14 +3874,7 @@ private:
         xrCreateHandTrackerEXT_ = nullptr;
         xrDestroyHandTrackerEXT_ = nullptr;
         xrLocateHandJointsEXT_ = nullptr;
-        hudPointerLeftVisible_ = false;
-        hudPointerRightVisible_ = false;
-        hudPointerLeftMode_ = HudPointerMode::None;
-        hudPointerRightMode_ = HudPointerMode::None;
-        hudTouchLeftActive_ = false;
-        hudTouchRightActive_ = false;
-        hudTouchLeftWasActive_ = false;
-        hudTouchRightWasActive_ = false;
+        ResetHudPointerAndTouchState();
         hudHandTrackingActive_ = false;
         ResetHandModeDebounce();
         ClearHandJointRenderState();
@@ -4036,6 +4028,8 @@ private:
     bool hudTouchRightActive_{false};
     bool hudTouchLeftWasActive_{false};
     bool hudTouchRightWasActive_{false};
+    bool hudTouchLeftLatched_{false};
+    bool hudTouchRightLatched_{false};
     bool hudHandTrackingActive_{false};
     HandModeDebounceState leftHandModeDebounce_{};
     HandModeDebounceState rightHandModeDebounce_{};
