@@ -49,7 +49,10 @@ constexpr float kNearZ = 0.05f;
 constexpr float kFarZ = 100.0f;
 constexpr uint32_t kProjectMWidth = 2048;
 constexpr uint32_t kProjectMHeight = 1024;
-constexpr uint32_t kPcmFramesPerPush = 512;
+constexpr uint32_t kDefaultPcmFramesPerPush = 512;
+constexpr uint32_t kMinPcmFramesPerPush = 256;
+constexpr uint32_t kMaxPcmFramesPerPush = 2048;
+constexpr uint32_t kMaxAudioDrainFramesPerFrame = 4096;
 constexpr float kAudioSampleRate = 48000.0f;
 constexpr float kAudioCarrierFrequency = 220.0f;
 constexpr float kAudioBeatFrequency = 1.9f;
@@ -57,7 +60,9 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr double kPresetSwitchSeconds = 20.0;
 constexpr double kPresetScanIntervalSeconds = 10.0;
 constexpr double kAudioFallbackDelaySeconds = 3.0;
-constexpr size_t kMaxQueuedAudioFrames = 48000 * 2;
+constexpr size_t kTargetQueuedAudioFrames = static_cast<size_t>(kAudioSampleRate * 0.09f);
+constexpr size_t kMaxQueuedAudioFrames = static_cast<size_t>(kAudioSampleRate * 0.50f);
+constexpr double kAudioQueueLogIntervalSeconds = 1.0;
 constexpr float kHudDistance = 0.72f;
 constexpr float kHudDistanceHandTracking = 0.55f;
 constexpr float kHudVerticalOffset = -0.27f;
@@ -234,33 +239,77 @@ AudioMode g_audioMode = AudioMode::Synthetic;
 bool g_mediaPlaying = false;
 std::string g_mediaLabel = "none";
 
+struct AudioChunk {
+    std::vector<float> samplesInterleavedStereo;
+    size_t readOffsetSamples{0};
+    double enqueueMonotonicSeconds{0.0};
+};
+
+struct AudioQueueSnapshot {
+    size_t queuedFrames{0};
+    uint64_t totalEnqueuedFrames{0};
+    uint64_t totalDequeuedFrames{0};
+    uint64_t totalDroppedFrames{0};
+    double oldestChunkAgeSeconds{0.0};
+};
+
 std::mutex g_audioMutex;
-std::deque<float> g_audioQueueInterleavedStereo;
+std::deque<AudioChunk> g_audioQueue;
+size_t g_queuedAudioFrames = 0;
+uint64_t g_totalEnqueuedAudioFrames = 0;
+uint64_t g_totalDequeuedAudioFrames = 0;
+uint64_t g_totalDroppedAudioFrames = 0;
+
+double MonotonicSeconds() {
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::duration<double>>(now).count();
+}
+
+void DropQueuedAudioFramesLocked(size_t framesToDrop) {
+    while (framesToDrop > 0 && !g_audioQueue.empty()) {
+        AudioChunk& front = g_audioQueue.front();
+        const size_t availableFrames = (front.samplesInterleavedStereo.size() - front.readOffsetSamples) / 2;
+        if (availableFrames == 0) {
+            g_audioQueue.pop_front();
+            continue;
+        }
+
+        const size_t dropFrames = std::min(framesToDrop, availableFrames);
+        const size_t dropSamples = dropFrames * 2;
+        front.readOffsetSamples += dropSamples;
+        g_queuedAudioFrames -= dropFrames;
+        g_totalDroppedAudioFrames += static_cast<uint64_t>(dropFrames);
+        framesToDrop -= dropFrames;
+
+        if (front.readOffsetSamples >= front.samplesInterleavedStereo.size()) {
+            g_audioQueue.pop_front();
+        }
+    }
+}
 
 void EnqueueAudioFrames(const float* samplesInterleavedStereo, size_t frameCount) {
     if (samplesInterleavedStereo == nullptr || frameCount == 0) {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(g_audioMutex);
-
     const size_t sampleCount = frameCount * 2;
     if (sampleCount == 0) {
         return;
     }
 
-    const size_t currentFrameCount = g_audioQueueInterleavedStereo.size() / 2;
-    if (currentFrameCount + frameCount > kMaxQueuedAudioFrames) {
-        const size_t overflowFrames = (currentFrameCount + frameCount) - kMaxQueuedAudioFrames;
-        const size_t overflowSamples = overflowFrames * 2;
-        for (size_t i = 0; i < overflowSamples && !g_audioQueueInterleavedStereo.empty(); ++i) {
-            g_audioQueueInterleavedStereo.pop_front();
-        }
+    AudioChunk chunk;
+    chunk.samplesInterleavedStereo.assign(samplesInterleavedStereo, samplesInterleavedStereo + sampleCount);
+    chunk.enqueueMonotonicSeconds = MonotonicSeconds();
+
+    std::lock_guard<std::mutex> lock(g_audioMutex);
+    if (g_queuedAudioFrames + frameCount > kMaxQueuedAudioFrames) {
+        const size_t overflowFrames = (g_queuedAudioFrames + frameCount) - kMaxQueuedAudioFrames;
+        DropQueuedAudioFramesLocked(overflowFrames);
     }
 
-    for (size_t i = 0; i < sampleCount; ++i) {
-        g_audioQueueInterleavedStereo.push_back(samplesInterleavedStereo[i]);
-    }
+    g_audioQueue.push_back(std::move(chunk));
+    g_queuedAudioFrames += frameCount;
+    g_totalEnqueuedAudioFrames += static_cast<uint64_t>(frameCount);
 }
 
 size_t DequeueAudioFrames(float* outputInterleavedStereo, size_t maxFrames) {
@@ -269,16 +318,49 @@ size_t DequeueAudioFrames(float* outputInterleavedStereo, size_t maxFrames) {
     }
 
     std::lock_guard<std::mutex> lock(g_audioMutex);
-    const size_t availableFrames = g_audioQueueInterleavedStereo.size() / 2;
-    const size_t framesToPop = std::min(maxFrames, availableFrames);
-    const size_t samplesToPop = framesToPop * 2;
+    size_t framesRemaining = maxFrames;
+    size_t writeOffsetSamples = 0;
 
-    for (size_t i = 0; i < samplesToPop; ++i) {
-        outputInterleavedStereo[i] = g_audioQueueInterleavedStereo.front();
-        g_audioQueueInterleavedStereo.pop_front();
+    while (framesRemaining > 0 && !g_audioQueue.empty()) {
+        AudioChunk& front = g_audioQueue.front();
+        const size_t availableFrames = (front.samplesInterleavedStereo.size() - front.readOffsetSamples) / 2;
+        if (availableFrames == 0) {
+            g_audioQueue.pop_front();
+            continue;
+        }
+
+        const size_t framesToCopy = std::min(framesRemaining, availableFrames);
+        const size_t samplesToCopy = framesToCopy * 2;
+        std::memcpy(outputInterleavedStereo + writeOffsetSamples,
+                    front.samplesInterleavedStereo.data() + front.readOffsetSamples,
+                    samplesToCopy * sizeof(float));
+
+        writeOffsetSamples += samplesToCopy;
+        front.readOffsetSamples += samplesToCopy;
+        framesRemaining -= framesToCopy;
+        g_queuedAudioFrames -= framesToCopy;
+        g_totalDequeuedAudioFrames += static_cast<uint64_t>(framesToCopy);
+
+        if (front.readOffsetSamples >= front.samplesInterleavedStereo.size()) {
+            g_audioQueue.pop_front();
+        }
     }
 
-    return framesToPop;
+    return maxFrames - framesRemaining;
+}
+
+AudioQueueSnapshot GetAudioQueueSnapshot() {
+    std::lock_guard<std::mutex> lock(g_audioMutex);
+    AudioQueueSnapshot snapshot;
+    snapshot.queuedFrames = g_queuedAudioFrames;
+    snapshot.totalEnqueuedFrames = g_totalEnqueuedAudioFrames;
+    snapshot.totalDequeuedFrames = g_totalDequeuedAudioFrames;
+    snapshot.totalDroppedFrames = g_totalDroppedAudioFrames;
+    if (!g_audioQueue.empty()) {
+        const double now = MonotonicSeconds();
+        snapshot.oldestChunkAgeSeconds = std::max(0.0, now - g_audioQueue.front().enqueueMonotonicSeconds);
+    }
+    return snapshot;
 }
 
 bool EnsureDirectory(const std::string& path) {
@@ -2250,13 +2332,61 @@ private:
         LOGW("Marked preset as slow: %s", presetPath.c_str());
     }
 
-    void AddSyntheticAudioForFrame() {
-        std::array<float, kPcmFramesPerPush * 2> samples{};
+    uint32_t TargetAudioFramesForRender(float deltaSeconds) const {
+        if (deltaSeconds <= 0.0f || deltaSeconds > 0.25f) {
+            return kDefaultPcmFramesPerPush;
+        }
+
+        const uint32_t predicted = static_cast<uint32_t>(std::lround(kAudioSampleRate * deltaSeconds));
+        return std::clamp(predicted, kMinPcmFramesPerPush, kMaxPcmFramesPerPush);
+    }
+
+    void MaybeLogAudioQueue(double nowSeconds,
+                            uint32_t targetFrames,
+                            uint32_t requestedFrames,
+                            size_t dequeuedFrames) {
+        if (nowSeconds - lastAudioQueueLogSeconds_ < kAudioQueueLogIntervalSeconds) {
+            return;
+        }
+
+        const AudioQueueSnapshot snapshot = GetAudioQueueSnapshot();
+        const double elapsed = std::max(0.001, nowSeconds - lastAudioQueueLogSeconds_);
+        const uint64_t enqueuedDelta = snapshot.totalEnqueuedFrames - lastAudioQueueEnqueuedFrames_;
+        const uint64_t dequeuedDelta = snapshot.totalDequeuedFrames - lastAudioQueueDequeuedFrames_;
+        const uint64_t droppedDelta = snapshot.totalDroppedFrames - lastAudioQueueDroppedFrames_;
+        const double queuedMs = 1000.0 * static_cast<double>(snapshot.queuedFrames) / kAudioSampleRate;
+        const double oldestMs = snapshot.oldestChunkAgeSeconds * 1000.0;
+
+        LOGI("Audio queue t=%.2f mode=%d queued=%zu (%.0fms oldest %.0fms) pull=%zu req=%u target=%u rates(enq=%.0f/s deq=%.0f/s drop=%.0f/s)",
+             nowSeconds,
+             static_cast<int>(currentAudioMode_),
+             snapshot.queuedFrames,
+             queuedMs,
+             oldestMs,
+             dequeuedFrames,
+             requestedFrames,
+             targetFrames,
+             static_cast<double>(enqueuedDelta) / elapsed,
+             static_cast<double>(dequeuedDelta) / elapsed,
+             static_cast<double>(droppedDelta) / elapsed);
+
+        lastAudioQueueLogSeconds_ = nowSeconds;
+        lastAudioQueueEnqueuedFrames_ = snapshot.totalEnqueuedFrames;
+        lastAudioQueueDequeuedFrames_ = snapshot.totalDequeuedFrames;
+        lastAudioQueueDroppedFrames_ = snapshot.totalDroppedFrames;
+    }
+
+    void AddSyntheticAudioForFrame(uint32_t frameCount) {
+        if (frameCount == 0) {
+            return;
+        }
+
+        audioFrameScratch_.assign(static_cast<size_t>(frameCount) * 2, 0.0f);
 
         const float carrierStep = (2.0f * kPi * kAudioCarrierFrequency) / kAudioSampleRate;
         const float beatStep = (2.0f * kPi * kAudioBeatFrequency) / kAudioSampleRate;
 
-        for (uint32_t i = 0; i < kPcmFramesPerPush; ++i) {
+        for (uint32_t i = 0; i < frameCount; ++i) {
             audioCarrierPhase_ += carrierStep;
             audioBeatPhase_ += beatStep;
 
@@ -2269,30 +2399,41 @@ private:
 
             const float envelope = 0.25f + 0.35f * (0.5f + 0.5f * std::sin(audioBeatPhase_));
             const float sample = envelope * std::sin(audioCarrierPhase_);
-            samples[2 * i] = sample;
-            samples[2 * i + 1] = sample;
+            audioFrameScratch_[2 * i] = sample;
+            audioFrameScratch_[2 * i + 1] = sample;
         }
 
-        projectm_pcm_add_float(projectM_, samples.data(), kPcmFramesPerPush, PROJECTM_STEREO);
+        projectm_pcm_add_float(projectM_, audioFrameScratch_.data(), frameCount, PROJECTM_STEREO);
     }
 
-    void AddAudioForFrame(double nowSeconds) {
-        std::array<float, kPcmFramesPerPush * 2> queuedSamples{};
-        const size_t queuedFrames = DequeueAudioFrames(queuedSamples.data(), kPcmFramesPerPush);
+    void AddAudioForFrame(double nowSeconds, float deltaSeconds) {
+        const uint32_t targetFrames = TargetAudioFramesForRender(deltaSeconds);
+        AudioQueueSnapshot beforePull = GetAudioQueueSnapshot();
+
+        uint32_t framesToPull = targetFrames;
+        if (beforePull.queuedFrames > kTargetQueuedAudioFrames) {
+            const size_t backlogFrames = beforePull.queuedFrames - kTargetQueuedAudioFrames;
+            const size_t boostedFrames = static_cast<size_t>(targetFrames) + backlogFrames;
+            framesToPull = static_cast<uint32_t>(std::min(boostedFrames, static_cast<size_t>(kMaxAudioDrainFramesPerFrame)));
+        }
+
+        audioFrameScratch_.assign(static_cast<size_t>(framesToPull) * 2, 0.0f);
+        const size_t queuedFrames = DequeueAudioFrames(audioFrameScratch_.data(), framesToPull);
         if (queuedFrames > 0) {
-            projectm_pcm_add_float(projectM_, queuedSamples.data(), static_cast<unsigned int>(queuedFrames), PROJECTM_STEREO);
+            projectm_pcm_add_float(projectM_, audioFrameScratch_.data(), static_cast<unsigned int>(queuedFrames), PROJECTM_STEREO);
             lastExternalAudioSeconds_ = nowSeconds;
-            return;
         }
 
         if (nowSeconds - lastExternalAudioSeconds_ > kAudioFallbackDelaySeconds) {
             if (currentAudioMode_ != AudioMode::Synthetic || currentMediaPlaying_) {
                 hudTextDirty_ = true;
             }
-            AddSyntheticAudioForFrame();
+            AddSyntheticAudioForFrame(targetFrames);
             currentAudioMode_ = AudioMode::Synthetic;
             currentMediaPlaying_ = false;
         }
+
+        MaybeLogAudioQueue(nowSeconds, targetFrames, framesToPull, queuedFrames);
     }
 
     void RefreshPresetListIfNeeded(double nowSeconds) {
@@ -3453,7 +3594,7 @@ private:
             return;
         }
 
-        AddAudioForFrame(nowSeconds);
+        AddAudioForFrame(nowSeconds, deltaSeconds);
         if (deltaSeconds > 0.0001f) {
             projectm_set_fps(projectM_, static_cast<int32_t>(1.0f / deltaSeconds));
         }
@@ -4022,6 +4163,11 @@ private:
     double lastPresetSwitchSeconds_{0.0};
     double lastPresetScanSeconds_{0.0};
     double lastExternalAudioSeconds_{-1000.0};
+    double lastAudioQueueLogSeconds_{-1000.0};
+    uint64_t lastAudioQueueEnqueuedFrames_{0};
+    uint64_t lastAudioQueueDequeuedFrames_{0};
+    uint64_t lastAudioQueueDroppedFrames_{0};
+    std::vector<float> audioFrameScratch_;
 };
 
 } // namespace
