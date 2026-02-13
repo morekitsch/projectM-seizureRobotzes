@@ -12,9 +12,10 @@ This Android Studio project packages an experimental Quest-compatible `NativeAct
 This is an integration prototype, not a production-ready headset app yet.
 
 - Audio input pipeline:
-  - First tries global output capture (`Visualizer` session `0`) so visuals can react to active headset audio.
-  - If global capture is blocked by runtime restrictions, falls back to an in-app media player plus session capture.
-  - If neither source is available, native synthetic audio fallback remains active.
+  - Supports explicit source switching in-headset: `global mixer`, `media player fallback`, `microphone`, `synthetic`.
+  - On startup it still prefers global output capture first.
+  - Media fallback beat detection prefers global mixer capture and falls back to media-session capture.
+  - If no capture source is available, native synthetic audio fallback remains active.
 - Presets:
   - Bundled starter presets still exist in APK assets.
   - Auto-downloads `presets-en-d` (around 50 presets) on first run.
@@ -88,25 +89,33 @@ adb shell setprop debug.projectm.quest.perf.clear_marked 0
 
 ## In-Headset UI + Controls
 
-The app renders a head-locked control HUD in VR with color tiles plus text labels so controls are self-labeled in-headset.
+The app renders a head-locked control HUD in VR with color tiles plus text labels.
 
-Default controller bindings:
+Primary XR interaction (recommended):
+
+1. Aim at a HUD tile with controller ray or hand aim.
+2. Press/select with trigger (controller) or pinch (hand tracking).
+3. If HUD is hidden, first trigger/pinch shows it; next press activates a tile.
+
+Legacy controller bindings (still active):
 
 1. Right `A`: next preset
 2. Left `X`: previous preset
 3. Left `Y`: play/pause media fallback
 4. Right `B`: next media track
 5. Left thumbstick click (`L3`): previous media track
-6. Right trigger pull: toggle sphere/dome projection
-7. Left trigger pull: request optional Cream preset download and rescan presets
+6. Right thumbstick click (`R3`): cycle audio input source (`global` -> `media` -> `mic` -> `synthetic`)
+7. Right trigger pull (off-HUD): toggle sphere/dome projection
+8. Left trigger pull (off-HUD): request optional Cream preset download and rescan presets
 
 HUD behavior:
 
-- HUD appears at launch and after controller/UI activity, then auto-hides after a short timeout.
+- HUD appears at launch and after controller/hand interaction, then auto-hides after a short timeout.
+- Left/right pointer cursors are rendered on the HUD when aim pose is active.
 
 HUD status includes:
 
-- audio mode (`synthetic`, `global capture`, `media fallback`)
+- audio mode (`synthetic`, `global capture`, `media fallback`, `microphone`)
 - projection mode (`sphere` or `dome`)
 - playback state (`playing`/`paused`)
 - current preset name

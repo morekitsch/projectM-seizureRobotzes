@@ -85,6 +85,37 @@ constexpr int kHudActionScale = 4;
 constexpr int kHudInputScale = 3;
 constexpr int kHudTriggerScale = 3;
 
+struct HudRect {
+    float minU;
+    float maxU;
+    float minV;
+    float maxV;
+};
+
+constexpr HudRect kHudRectPrevPreset{0.07f, 0.46f, 0.59f, 0.84f};
+constexpr HudRect kHudRectNextPreset{0.54f, 0.93f, 0.59f, 0.84f};
+constexpr HudRect kHudRectTogglePlay{0.07f, 0.46f, 0.30f, 0.55f};
+constexpr HudRect kHudRectNextTrack{0.54f, 0.93f, 0.30f, 0.55f};
+constexpr HudRect kHudRectPack{0.07f, 0.33f, 0.08f, 0.24f};
+constexpr HudRect kHudRectCenter{0.37f, 0.63f, 0.08f, 0.24f};
+constexpr HudRect kHudRectProjection{0.67f, 0.93f, 0.08f, 0.24f};
+
+enum class HandSide : uint8_t {
+    Left = 0,
+    Right = 1,
+};
+
+enum class HudButtonId : uint8_t {
+    None = 0,
+    PrevPreset = 1,
+    NextPreset = 2,
+    TogglePlay = 3,
+    NextTrack = 4,
+    OptionalPack = 5,
+    CycleAudio = 6,
+    ToggleProjection = 7,
+};
+
 constexpr char kFallbackPreset[] =
     "[preset00]\n"
     "fDecay=0.98\n"
@@ -124,6 +155,7 @@ enum class AudioMode : int {
     Synthetic = 0,
     GlobalCapture = 1,
     MediaFallback = 2,
+    Microphone = 3,
 };
 
 std::mutex g_uiMutex;
@@ -900,27 +932,19 @@ private:
         if (!createAction(actionTogglePlay_, XR_ACTION_TYPE_BOOLEAN_INPUT, "toggle_play", "Toggle Play Pause")) return false;
         if (!createAction(actionNextTrack_, XR_ACTION_TYPE_BOOLEAN_INPUT, "next_track", "Next Track")) return false;
         if (!createAction(actionPrevTrack_, XR_ACTION_TYPE_BOOLEAN_INPUT, "prev_track", "Previous Track")) return false;
+        if (!createAction(actionCycleAudioInput_, XR_ACTION_TYPE_BOOLEAN_INPUT, "cycle_audio_input", "Cycle Audio Input")) return false;
         if (!createAction(actionToggleProjection_, XR_ACTION_TYPE_FLOAT_INPUT, "toggle_projection", "Toggle Projection")) return false;
         if (!createAction(actionOptionalPack_, XR_ACTION_TYPE_FLOAT_INPUT, "optional_pack", "Optional Preset Pack")) return false;
+        if (!createAction(actionAimPose_, XR_ACTION_TYPE_POSE_INPUT, "aim_pose", "Aim Pose")) return false;
 
-        std::vector<XrActionSuggestedBinding> bindings;
-
-        auto bind = [&](XrAction action, const char* path) {
+        auto bind = [&](std::vector<XrActionSuggestedBinding>& bindings, XrAction action, const char* path) {
             XrPath xrPath = XR_NULL_PATH;
             if (XR_SUCCEEDED(xrStringToPath(xrInstance_, path, &xrPath)) && xrPath != XR_NULL_PATH) {
                 bindings.push_back({action, xrPath});
             }
         };
 
-        bind(actionNextPreset_, "/user/hand/right/input/a/click");
-        bind(actionPrevPreset_, "/user/hand/left/input/x/click");
-        bind(actionTogglePlay_, "/user/hand/left/input/y/click");
-        bind(actionNextTrack_, "/user/hand/right/input/b/click");
-        bind(actionPrevTrack_, "/user/hand/left/input/thumbstick/click");
-        bind(actionToggleProjection_, "/user/hand/right/input/trigger/value");
-        bind(actionOptionalPack_, "/user/hand/left/input/trigger/value");
-
-        auto suggestBindings = [&](const char* profilePath) -> bool {
+        auto suggestBindings = [&](const char* profilePath, const std::vector<XrActionSuggestedBinding>& bindings) -> bool {
             if (bindings.empty()) {
                 return false;
             }
@@ -947,12 +971,34 @@ private:
             return true;
         };
 
-        bool suggestedAnyProfile = false;
-        suggestedAnyProfile |= suggestBindings("/interaction_profiles/meta/touch_controller_plus");
-        suggestedAnyProfile |= suggestBindings("/interaction_profiles/meta/touch_controller_pro");
-        suggestedAnyProfile |= suggestBindings("/interaction_profiles/oculus/touch_controller");
-        if (!suggestedAnyProfile) {
+        std::vector<XrActionSuggestedBinding> controllerBindings;
+        bind(controllerBindings, actionNextPreset_, "/user/hand/right/input/a/click");
+        bind(controllerBindings, actionPrevPreset_, "/user/hand/left/input/x/click");
+        bind(controllerBindings, actionTogglePlay_, "/user/hand/left/input/y/click");
+        bind(controllerBindings, actionNextTrack_, "/user/hand/right/input/b/click");
+        bind(controllerBindings, actionPrevTrack_, "/user/hand/left/input/thumbstick/click");
+        bind(controllerBindings, actionCycleAudioInput_, "/user/hand/right/input/thumbstick/click");
+        bind(controllerBindings, actionToggleProjection_, "/user/hand/right/input/trigger/value");
+        bind(controllerBindings, actionOptionalPack_, "/user/hand/left/input/trigger/value");
+        bind(controllerBindings, actionAimPose_, "/user/hand/left/input/aim/pose");
+        bind(controllerBindings, actionAimPose_, "/user/hand/right/input/aim/pose");
+
+        bool suggestedAnyControllerProfile = false;
+        suggestedAnyControllerProfile |= suggestBindings("/interaction_profiles/meta/touch_controller_plus", controllerBindings);
+        suggestedAnyControllerProfile |= suggestBindings("/interaction_profiles/meta/touch_controller_pro", controllerBindings);
+        suggestedAnyControllerProfile |= suggestBindings("/interaction_profiles/oculus/touch_controller", controllerBindings);
+        if (!suggestedAnyControllerProfile) {
             LOGW("No controller profile binding suggestions succeeded; controller input may be unavailable.");
+        }
+
+        std::vector<XrActionSuggestedBinding> handBindings;
+        bind(handBindings, actionToggleProjection_, "/user/hand/right/input/pinch_ext/value");
+        bind(handBindings, actionOptionalPack_, "/user/hand/left/input/pinch_ext/value");
+        bind(handBindings, actionAimPose_, "/user/hand/left/input/aim/pose");
+        bind(handBindings, actionAimPose_, "/user/hand/right/input/aim/pose");
+        const bool suggestedHandProfile = suggestBindings("/interaction_profiles/ext/hand_interaction_ext", handBindings);
+        if (!suggestedHandProfile) {
+            LOGW("Hand interaction profile binding suggestion failed; hand pinches may be unavailable.");
         }
 
         XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
@@ -962,6 +1008,19 @@ private:
             LOGE("xrAttachSessionActionSets failed.");
             return false;
         }
+
+        auto createAimSpace = [&](XrPath subactionPath, XrSpace& spaceOut, const char* label) {
+            XrActionSpaceCreateInfo actionSpaceInfo{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+            actionSpaceInfo.action = actionAimPose_;
+            actionSpaceInfo.subactionPath = subactionPath;
+            actionSpaceInfo.poseInActionSpace.orientation.w = 1.0f;
+            if (XR_FAILED(xrCreateActionSpace(xrSession_, &actionSpaceInfo, &spaceOut))) {
+                LOGW("xrCreateActionSpace failed for %s aim pose.", label);
+                spaceOut = XR_NULL_HANDLE;
+            }
+        };
+        createAimSpace(leftHandPath_, leftAimSpace_, "left");
+        createAimSpace(rightHandPath_, rightAimSpace_, "right");
 
         return true;
     }
@@ -1082,15 +1141,27 @@ private:
             return false;
         }
 
+        auto hasInstanceExtension = [&](const char* extensionName) {
+            return std::any_of(extensionProperties.begin(),
+                               extensionProperties.end(),
+                               [extensionName](const XrExtensionProperties& ext) {
+                                   return std::strcmp(ext.extensionName, extensionName) == 0;
+                               });
+        };
+
         for (const char* required : requiredExtensions) {
-            const bool found = std::any_of(extensionProperties.begin(), extensionProperties.end(),
-                                           [required](const XrExtensionProperties& ext) {
-                                               return std::strcmp(ext.extensionName, required) == 0;
-                                           });
+            const bool found = hasInstanceExtension(required);
             if (!found) {
                 LOGE("Required OpenXR extension missing: %s", required);
                 return false;
             }
+        }
+
+        if (hasInstanceExtension("XR_EXT_hand_interaction")) {
+            requiredExtensions.push_back("XR_EXT_hand_interaction");
+            LOGI("Enabling XR_EXT_hand_interaction for hand gesture input.");
+        } else {
+            LOGW("XR_EXT_hand_interaction not reported by runtime; hand gesture input may be unavailable.");
         }
 
         XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
@@ -1392,6 +1463,8 @@ private:
             uniform vec4 uFlashLT;
             uniform vec4 uFlashMenu;
             uniform vec4 uStatus;
+            uniform vec4 uPointerLeft;
+            uniform vec4 uPointerRight;
             uniform sampler2D uTextTexture;
             out vec4 fragColor;
 
@@ -1404,6 +1477,11 @@ private:
             vec3 blendRect(vec3 baseColor, vec2 uv, vec2 minPt, vec2 maxPt, vec3 color, float alpha) {
                 float m = rectMask(uv, minPt, maxPt, 0.0035);
                 return mix(baseColor, color, m * alpha);
+            }
+
+            float pointerMask(vec2 uv, vec2 center, float radius, float feather) {
+                float dist = length(uv - center);
+                return smoothstep(radius + feather, radius - feather, dist);
             }
 
             void main() {
@@ -1423,18 +1501,25 @@ private:
                 color = blendRect(color, vUv, vec2(0.37, 0.08), vec2(0.63, 0.24), vec3(0.90, 0.54, 0.20), 0.88 + uFlashMenu.x);
                 color = blendRect(color, vUv, vec2(0.67, 0.08), vec2(0.93, 0.24), vec3(0.23, 0.72, 0.85), 0.88 + uFlashRT.x);
 
-                // Audio mode dots: synthetic, global, media
+                // Audio mode dots: synthetic, global, media, microphone
                 vec3 inactive = vec3(0.22, 0.22, 0.24);
                 vec3 synthColor = vec3(0.95, 0.65, 0.25);
                 vec3 globalColor = vec3(0.22, 0.86, 0.48);
                 vec3 mediaColor = vec3(0.24, 0.62, 0.92);
+                vec3 micColor = vec3(0.93, 0.44, 0.86);
                 float audioMode = uStatus.x;
                 float projMode = uStatus.y;
                 float playing = uStatus.z;
 
-                color = blendRect(color, vUv, vec2(0.10, 0.88), vec2(0.17, 0.93), mix(inactive, synthColor, step(audioMode, 0.5)), 1.0);
-                color = blendRect(color, vUv, vec2(0.19, 0.88), vec2(0.26, 0.93), mix(inactive, globalColor, step(0.5, audioMode) * (1.0 - step(1.5, audioMode))), 1.0);
-                color = blendRect(color, vUv, vec2(0.28, 0.88), vec2(0.35, 0.93), mix(inactive, mediaColor, step(1.5, audioMode)), 1.0);
+                float synthMask = 1.0 - step(0.5, audioMode);
+                float globalMask = step(0.5, audioMode) * (1.0 - step(1.5, audioMode));
+                float mediaMask = step(1.5, audioMode) * (1.0 - step(2.5, audioMode));
+                float micMask = step(2.5, audioMode);
+
+                color = blendRect(color, vUv, vec2(0.09, 0.88), vec2(0.14, 0.93), mix(inactive, synthColor, synthMask), 1.0);
+                color = blendRect(color, vUv, vec2(0.16, 0.88), vec2(0.21, 0.93), mix(inactive, globalColor, globalMask), 1.0);
+                color = blendRect(color, vUv, vec2(0.23, 0.88), vec2(0.28, 0.93), mix(inactive, mediaColor, mediaMask), 1.0);
+                color = blendRect(color, vUv, vec2(0.30, 0.88), vec2(0.35, 0.93), mix(inactive, micColor, micMask), 1.0);
 
                 // Projection indicator
                 vec3 sphereColor = vec3(0.26, 0.72, 0.90);
@@ -1448,6 +1533,21 @@ private:
                 float textMask = texture(uTextTexture, vUv).r;
                 color = mix(color, vec3(0.97), clamp(textMask * 1.45, 0.0, 1.0));
                 alpha = max(alpha, textMask);
+
+                if (uPointerLeft.z > 0.5) {
+                    float ring = pointerMask(vUv, uPointerLeft.xy, 0.022, 0.0035) - pointerMask(vUv, uPointerLeft.xy, 0.013, 0.0035);
+                    float core = pointerMask(vUv, uPointerLeft.xy, 0.006, 0.0020);
+                    float mask = clamp(ring + core, 0.0, 1.0);
+                    color = mix(color, vec3(0.30, 0.88, 0.92), mask * 0.90);
+                    alpha = max(alpha, mask * 0.95);
+                }
+                if (uPointerRight.z > 0.5) {
+                    float ring = pointerMask(vUv, uPointerRight.xy, 0.022, 0.0035) - pointerMask(vUv, uPointerRight.xy, 0.013, 0.0035);
+                    float core = pointerMask(vUv, uPointerRight.xy, 0.006, 0.0020);
+                    float mask = clamp(ring + core, 0.0, 1.0);
+                    color = mix(color, vec3(0.98, 0.72, 0.30), mask * 0.90);
+                    alpha = max(alpha, mask * 0.95);
+                }
 
                 fragColor = vec4(color, alpha);
             }
@@ -1481,6 +1581,8 @@ private:
         hudFlashLtLoc_ = glGetUniformLocation(hudProgram_, "uFlashLT");
         hudFlashMenuLoc_ = glGetUniformLocation(hudProgram_, "uFlashMenu");
         hudStatusLoc_ = glGetUniformLocation(hudProgram_, "uStatus");
+        hudPointerLeftLoc_ = glGetUniformLocation(hudProgram_, "uPointerLeft");
+        hudPointerRightLoc_ = glGetUniformLocation(hudProgram_, "uPointerRight");
         hudTextSamplerLoc_ = glGetUniformLocation(hudProgram_, "uTextTexture");
 
         const float hudVertices[] = {
@@ -1947,6 +2049,8 @@ private:
                 return "GLOBAL CAPTURE";
             case AudioMode::MediaFallback:
                 return "MEDIA FALLBACK";
+            case AudioMode::Microphone:
+                return "MICROPHONE";
             default:
                 return "UNKNOWN";
         }
@@ -2027,20 +2131,15 @@ private:
         DrawHudTextCentered(0.66f, 0.95f, 0.92f, 0.965f, "PLAY " + hudRenderedPlaybackLabel_, kHudStatusScale);
         DrawHudTextCentered(0.05f, 0.95f, 0.86f, 0.91f, "PRESET " + hudRenderedPresetLabel_, kHudDetailScale);
 
-        DrawHudTextCentered(0.07f, 0.46f, 0.59f, 0.84f, "X PREV PRESET", kHudActionScale);
-        DrawHudTextCentered(0.54f, 0.93f, 0.59f, 0.84f, "A NEXT PRESET", kHudActionScale);
-        DrawHudTextCentered(0.07f, 0.46f, 0.30f, 0.55f, "Y PLAY PAUSE", kHudActionScale);
-        DrawHudTextCentered(0.54f, 0.93f, 0.30f, 0.55f, "B NEXT TRACK", kHudActionScale);
-        DrawHudTextCentered(0.07f,
-                            0.93f,
-                            0.54f,
-                            0.60f,
-                            hudRenderedInputFeedbackLabel_,
-                            kHudInputScale,
-                            inputFeedbackActive ? 255 : 170);
-        DrawHudTextCentered(0.07f, 0.33f, 0.08f, 0.24f, "LT GET PACK", kHudTriggerScale);
-        DrawHudTextCentered(0.37f, 0.63f, 0.08f, 0.24f, "L3 PREV", kHudTriggerScale);
-        DrawHudTextCentered(0.67f, 0.93f, 0.08f, 0.24f, "RT TOGGLE", kHudTriggerScale);
+        DrawHudTextCentered(kHudRectPrevPreset.minU, kHudRectPrevPreset.maxU, kHudRectPrevPreset.minV, kHudRectPrevPreset.maxV, "PREV PRESET", kHudActionScale);
+        DrawHudTextCentered(kHudRectNextPreset.minU, kHudRectNextPreset.maxU, kHudRectNextPreset.minV, kHudRectNextPreset.maxV, "NEXT PRESET", kHudActionScale);
+        DrawHudTextCentered(kHudRectTogglePlay.minU, kHudRectTogglePlay.maxU, kHudRectTogglePlay.minV, kHudRectTogglePlay.maxV, "PLAY PAUSE", kHudActionScale);
+        DrawHudTextCentered(kHudRectNextTrack.minU, kHudRectNextTrack.maxU, kHudRectNextTrack.minV, kHudRectNextTrack.maxV, "NEXT TRACK", kHudActionScale);
+        DrawHudTextCentered(0.07f, 0.93f, 0.54f, 0.60f, hudRenderedInputFeedbackLabel_, kHudInputScale, inputFeedbackActive ? 255 : 170);
+        DrawHudTextCentered(0.07f, 0.93f, 0.25f, 0.29f, "AIM + PINCH/TRIGGER", kHudInputScale, 190);
+        DrawHudTextCentered(kHudRectPack.minU, kHudRectPack.maxU, kHudRectPack.minV, kHudRectPack.maxV, "PACK", kHudTriggerScale);
+        DrawHudTextCentered(kHudRectCenter.minU, kHudRectCenter.maxU, kHudRectCenter.minV, kHudRectCenter.maxV, "AUDIO MODE", kHudTriggerScale);
+        DrawHudTextCentered(kHudRectProjection.minU, kHudRectProjection.maxU, kHudRectProjection.minV, kHudRectProjection.maxV, "PROJECTION", kHudTriggerScale);
 
         glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -2072,6 +2171,10 @@ private:
     }
 
     bool GetFloatActionPressed(XrAction action, float threshold, bool& wasPressedLastFrame) const {
+        return GetFloatActionPressed(action, XR_NULL_PATH, threshold, wasPressedLastFrame);
+    }
+
+    bool GetFloatActionPressed(XrAction action, XrPath subactionPath, float threshold, bool& wasPressedLastFrame) const {
         if (action == XR_NULL_HANDLE) {
             wasPressedLastFrame = false;
             return false;
@@ -2079,6 +2182,7 @@ private:
 
         XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
         getInfo.action = action;
+        getInfo.subactionPath = subactionPath;
         XrActionStateFloat state{XR_TYPE_ACTION_STATE_FLOAT};
         if (XR_FAILED(xrGetActionStateFloat(xrSession_, &getInfo, &state))) {
             wasPressedLastFrame = false;
@@ -2089,6 +2193,233 @@ private:
         const bool justPressed = isPressed && !wasPressedLastFrame;
         wasPressedLastFrame = isPressed;
         return justPressed;
+    }
+
+    struct HudPanelFrame {
+        glm::vec3 position;
+        glm::vec3 right;
+        glm::vec3 up;
+        glm::vec3 normal;
+    };
+
+    HudPanelFrame BuildHudPanelFrame(const XrPosef& headPose) const {
+        const glm::vec3 headPosition(headPose.position.x, headPose.position.y, headPose.position.z);
+        const glm::quat headOrientation(headPose.orientation.w,
+                                        headPose.orientation.x,
+                                        headPose.orientation.y,
+                                        headPose.orientation.z);
+        HudPanelFrame panel{};
+        panel.position = headPosition + headOrientation * glm::vec3(0.0f, hudVerticalOffset_, -hudDistance_);
+        panel.right = glm::normalize(headOrientation * glm::vec3(1.0f, 0.0f, 0.0f));
+        panel.up = glm::normalize(headOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
+        panel.normal = glm::normalize(headOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
+        return panel;
+    }
+
+    bool IsAimPoseActive(XrPath handPath) const {
+        if (actionAimPose_ == XR_NULL_HANDLE) {
+            return false;
+        }
+        XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
+        getInfo.action = actionAimPose_;
+        getInfo.subactionPath = handPath;
+        XrActionStatePose state{XR_TYPE_ACTION_STATE_POSE};
+        if (XR_FAILED(xrGetActionStatePose(xrSession_, &getInfo, &state))) {
+            return false;
+        }
+        return state.isActive;
+    }
+
+    bool LocateAimPoseForHand(HandSide handSide, XrTime displayTime, XrPosef& poseOut) const {
+        const XrSpace handSpace = handSide == HandSide::Left ? leftAimSpace_ : rightAimSpace_;
+        const XrPath handPath = handSide == HandSide::Left ? leftHandPath_ : rightHandPath_;
+        if (handSpace == XR_NULL_HANDLE || handPath == XR_NULL_PATH || xrAppSpace_ == XR_NULL_HANDLE) {
+            return false;
+        }
+        if (!IsAimPoseActive(handPath)) {
+            return false;
+        }
+
+        XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+        if (XR_FAILED(xrLocateSpace(handSpace, xrAppSpace_, displayTime, &location))) {
+            return false;
+        }
+        constexpr XrSpaceLocationFlags kRequiredFlags =
+            XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        if ((location.locationFlags & kRequiredFlags) != kRequiredFlags) {
+            return false;
+        }
+
+        poseOut = location.pose;
+        return true;
+    }
+
+    bool RaycastHudPanel(const HudPanelFrame& panel, const XrPosef& aimPose, glm::vec2& uvOut) const {
+        const glm::vec3 origin(aimPose.position.x, aimPose.position.y, aimPose.position.z);
+        const glm::quat orientation(aimPose.orientation.w,
+                                    aimPose.orientation.x,
+                                    aimPose.orientation.y,
+                                    aimPose.orientation.z);
+        const glm::vec3 direction = glm::normalize(orientation * glm::vec3(0.0f, 0.0f, -1.0f));
+
+        const float denom = glm::dot(direction, panel.normal);
+        if (std::fabs(denom) < 1.0e-5f) {
+            return false;
+        }
+
+        const float t = glm::dot(panel.position - origin, panel.normal) / denom;
+        if (t <= 0.0f) {
+            return false;
+        }
+
+        const glm::vec3 hitPoint = origin + direction * t;
+        const glm::vec3 local = hitPoint - panel.position;
+        const float localX = glm::dot(local, panel.right) / hudWidth_;
+        const float localY = glm::dot(local, panel.up) / hudHeight_;
+        const float u = localX + 0.5f;
+        const float v = localY + 0.5f;
+        if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
+            return false;
+        }
+
+        uvOut = glm::vec2(u, v);
+        return true;
+    }
+
+    bool UvInRect(const glm::vec2& uv, const HudRect& rect) const {
+        return uv.x >= rect.minU && uv.x <= rect.maxU && uv.y >= rect.minV && uv.y <= rect.maxV;
+    }
+
+    HudButtonId ResolveHudButton(const glm::vec2& uv) const {
+        if (UvInRect(uv, kHudRectPrevPreset)) {
+            return HudButtonId::PrevPreset;
+        }
+        if (UvInRect(uv, kHudRectNextPreset)) {
+            return HudButtonId::NextPreset;
+        }
+        if (UvInRect(uv, kHudRectTogglePlay)) {
+            return HudButtonId::TogglePlay;
+        }
+        if (UvInRect(uv, kHudRectNextTrack)) {
+            return HudButtonId::NextTrack;
+        }
+        if (UvInRect(uv, kHudRectPack)) {
+            return HudButtonId::OptionalPack;
+        }
+        if (UvInRect(uv, kHudRectCenter)) {
+            return HudButtonId::CycleAudio;
+        }
+        if (UvInRect(uv, kHudRectProjection)) {
+            return HudButtonId::ToggleProjection;
+        }
+        return HudButtonId::None;
+    }
+
+    void ExecuteHudButton(HudButtonId button, double nowSeconds) {
+        switch (button) {
+            case HudButtonId::PrevPreset:
+                SwitchPresetRelative(-1, true);
+                hudFlashX_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "UI PREV PRESET");
+                break;
+
+            case HudButtonId::NextPreset:
+                SwitchPresetRelative(+1, true);
+                hudFlashA_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "UI NEXT PRESET");
+                break;
+
+            case HudButtonId::TogglePlay:
+                CallJavaControlMethod("onNativeTogglePlayback");
+                hudFlashY_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "UI PLAY PAUSE");
+                break;
+
+            case HudButtonId::NextTrack:
+                CallJavaControlMethod("onNativeNextTrack");
+                hudFlashB_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "UI NEXT TRACK");
+                break;
+
+            case HudButtonId::OptionalPack:
+                CallJavaControlMethod("onNativeRequestOptionalCreamPack");
+                lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
+                hudFlashLt_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "UI REQUEST PACK");
+                break;
+
+            case HudButtonId::CycleAudio:
+                CallJavaControlMethod("onNativeCycleAudioInput");
+                hudFlashMenu_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "UI AUDIO INPUT");
+                break;
+
+            case HudButtonId::ToggleProjection:
+                projectionMode_ = projectionMode_ == ProjectionMode::FullSphere
+                    ? ProjectionMode::FrontDome
+                    : ProjectionMode::FullSphere;
+                hudFlashRt_ = kHudFlashPeak;
+                hudTextDirty_ = true;
+                SetHudInputFeedback(nowSeconds,
+                                    projectionMode_ == ProjectionMode::FrontDome
+                                        ? "UI PROJECTION DOME"
+                                        : "UI PROJECTION SPHERE");
+                break;
+
+            case HudButtonId::None:
+            default:
+                return;
+        }
+
+        ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
+    }
+
+    void UpdateHudPointerState(XrTime displayTime, const XrPosef& headPose) {
+        hudPointerLeftVisible_ = false;
+        hudPointerRightVisible_ = false;
+
+        if (!hudEnabled_) {
+            return;
+        }
+
+        const HudPanelFrame panel = BuildHudPanelFrame(headPose);
+        XrPosef aimPose{};
+        glm::vec2 uv(0.0f);
+
+        if (LocateAimPoseForHand(HandSide::Left, displayTime, aimPose) && RaycastHudPanel(panel, aimPose, uv)) {
+            hudPointerLeftVisible_ = true;
+            hudPointerLeftUv_ = uv;
+        }
+
+        if (LocateAimPoseForHand(HandSide::Right, displayTime, aimPose) && RaycastHudPanel(panel, aimPose, uv)) {
+            hudPointerRightVisible_ = true;
+            hudPointerRightUv_ = uv;
+        }
+    }
+
+    bool ConsumeHudPointerPress(double nowSeconds, HandSide handSide) {
+        if (!hudEnabled_) {
+            return false;
+        }
+
+        if (nowSeconds > hudVisibleUntilSeconds_) {
+            SetHudInputFeedback(nowSeconds, "MENU SHOWN");
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
+            return true;
+        }
+
+        const bool pointerVisible = handSide == HandSide::Left ? hudPointerLeftVisible_ : hudPointerRightVisible_;
+        if (!pointerVisible) {
+            return false;
+        }
+        const glm::vec2 pointerUv = handSide == HandSide::Left ? hudPointerLeftUv_ : hudPointerRightUv_;
+        const HudButtonId button = ResolveHudButton(pointerUv);
+        if (button == HudButtonId::None) {
+            return false;
+        }
+
+        ExecuteHudButton(button, nowSeconds);
+        return true;
     }
 
     void ExtendHudVisibility(double nowSeconds, double durationSeconds) {
@@ -2277,7 +2608,7 @@ private:
              static_cast<double>(perfAutoSkipMinFps_));
     }
 
-    void PollInputActions(double nowSeconds) {
+    void PollInputActions(double nowSeconds, XrTime displayTime, const XrPosef& headPose) {
         if (!sessionRunning_ || actionSet_ == XR_NULL_HANDLE) {
             return;
         }
@@ -2291,8 +2622,12 @@ private:
         if (XR_FAILED(xrSyncActions(xrSession_, &syncInfo))) {
             rightTriggerPressed_ = false;
             leftTriggerPressed_ = false;
+            hudPointerLeftVisible_ = false;
+            hudPointerRightVisible_ = false;
             return;
         }
+
+        UpdateHudPointerState(displayTime, headPose);
 
         bool handledInput = false;
         if (GetActionPressed(actionNextPreset_)) {
@@ -2325,23 +2660,40 @@ private:
             SetHudInputFeedback(nowSeconds, "L3 PREV TRACK");
             handledInput = true;
         }
-        if (GetFloatActionPressed(actionToggleProjection_, kTriggerPressThreshold, rightTriggerPressed_)) {
-            projectionMode_ = projectionMode_ == ProjectionMode::FullSphere
-                ? ProjectionMode::FrontDome
-                : ProjectionMode::FullSphere;
-            hudFlashRt_ = kHudFlashPeak;
-            hudTextDirty_ = true;
-            SetHudInputFeedback(nowSeconds,
-                                projectionMode_ == ProjectionMode::FrontDome
-                                    ? "RT PROJECTION DOME"
-                                    : "RT PROJECTION SPHERE");
+        if (GetActionPressed(actionCycleAudioInput_)) {
+            CallJavaControlMethod("onNativeCycleAudioInput");
+            hudFlashMenu_ = kHudFlashPeak;
+            SetHudInputFeedback(nowSeconds, "R3 AUDIO INPUT");
             handledInput = true;
         }
-        if (GetFloatActionPressed(actionOptionalPack_, kTriggerPressThreshold, leftTriggerPressed_)) {
-            CallJavaControlMethod("onNativeRequestOptionalCreamPack");
-            lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
-            hudFlashLt_ = kHudFlashPeak;
-            SetHudInputFeedback(nowSeconds, "LT REQUEST PACK");
+
+        if (GetFloatActionPressed(actionToggleProjection_,
+                                  rightHandPath_,
+                                  kTriggerPressThreshold,
+                                  rightTriggerPressed_)) {
+            if (!ConsumeHudPointerPress(nowSeconds, HandSide::Right)) {
+                projectionMode_ = projectionMode_ == ProjectionMode::FullSphere
+                    ? ProjectionMode::FrontDome
+                    : ProjectionMode::FullSphere;
+                hudFlashRt_ = kHudFlashPeak;
+                hudTextDirty_ = true;
+                SetHudInputFeedback(nowSeconds,
+                                    projectionMode_ == ProjectionMode::FrontDome
+                                        ? "RT PROJECTION DOME"
+                                        : "RT PROJECTION SPHERE");
+            }
+            handledInput = true;
+        }
+        if (GetFloatActionPressed(actionOptionalPack_,
+                                  leftHandPath_,
+                                  kTriggerPressThreshold,
+                                  leftTriggerPressed_)) {
+            if (!ConsumeHudPointerPress(nowSeconds, HandSide::Left)) {
+                CallJavaControlMethod("onNativeRequestOptionalCreamPack");
+                lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
+                hudFlashLt_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, "LT REQUEST PACK");
+            }
             handledInput = true;
         }
 
@@ -2416,6 +2768,16 @@ private:
                     static_cast<float>(static_cast<int>(currentAudioMode_)),
                     projectionMode_ == ProjectionMode::FrontDome ? 1.0f : 0.0f,
                     currentMediaPlaying_ ? 1.0f : 0.0f,
+                    0.0f);
+        glUniform4f(hudPointerLeftLoc_,
+                    hudPointerLeftUv_.x,
+                    hudPointerLeftUv_.y,
+                    hudPointerLeftVisible_ ? 1.0f : 0.0f,
+                    0.0f);
+        glUniform4f(hudPointerRightLoc_,
+                    hudPointerRightUv_.x,
+                    hudPointerRightUv_.y,
+                    hudPointerRightVisible_ ? 1.0f : 0.0f,
                     0.0f);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
@@ -2495,6 +2857,8 @@ private:
                     lastRuntimePropertyPollSeconds_ = -1000.0;
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
+                    hudPointerLeftVisible_ = false;
+                    hudPointerRightVisible_ = false;
                     ExtendHudVisibility(lastFrameSeconds_, kHudVisibleOnStartSeconds);
                     LOGI("XR session started.");
                 } else {
@@ -2510,6 +2874,8 @@ private:
                     sessionRunning_ = false;
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
+                    hudPointerLeftVisible_ = false;
+                    hudPointerRightVisible_ = false;
                     LOGI("XR session stopped.");
                 }
                 break;
@@ -2550,7 +2916,6 @@ private:
             lastFrameSeconds_ = nowSeconds;
 
             PollRuntimeDebugProperties(nowSeconds);
-            PollInputActions(nowSeconds);
             UpdateUiStateFromJava(nowSeconds);
             AdvanceHudFlash(std::max(deltaSeconds, 0.0f));
             UpdatePerformanceAutoSkip(nowSeconds, std::max(deltaSeconds, 0.0f));
@@ -2569,6 +2934,12 @@ private:
                 LOGE("xrLocateViews failed.");
                 exitRenderLoop_ = true;
             } else {
+                if (viewCountOutput > 0) {
+                    PollInputActions(nowSeconds, frameState.predictedDisplayTime, xrViews_[0].pose);
+                } else {
+                    hudPointerLeftVisible_ = false;
+                    hudPointerRightVisible_ = false;
+                }
                 projectionViews.clear();
                 projectionViews.reserve(viewCountOutput);
 
@@ -2731,6 +3102,14 @@ private:
         }
         swapchains_.clear();
 
+        if (leftAimSpace_ != XR_NULL_HANDLE) {
+            xrDestroySpace(leftAimSpace_);
+            leftAimSpace_ = XR_NULL_HANDLE;
+        }
+        if (rightAimSpace_ != XR_NULL_HANDLE) {
+            xrDestroySpace(rightAimSpace_);
+            rightAimSpace_ = XR_NULL_HANDLE;
+        }
         if (xrAppSpace_ != XR_NULL_HANDLE) {
             xrDestroySpace(xrAppSpace_);
             xrAppSpace_ = XR_NULL_HANDLE;
@@ -2750,14 +3129,18 @@ private:
         if (actionTogglePlay_ != XR_NULL_HANDLE) { xrDestroyAction(actionTogglePlay_); actionTogglePlay_ = XR_NULL_HANDLE; }
         if (actionNextTrack_ != XR_NULL_HANDLE) { xrDestroyAction(actionNextTrack_); actionNextTrack_ = XR_NULL_HANDLE; }
         if (actionPrevTrack_ != XR_NULL_HANDLE) { xrDestroyAction(actionPrevTrack_); actionPrevTrack_ = XR_NULL_HANDLE; }
+        if (actionCycleAudioInput_ != XR_NULL_HANDLE) { xrDestroyAction(actionCycleAudioInput_); actionCycleAudioInput_ = XR_NULL_HANDLE; }
         if (actionToggleProjection_ != XR_NULL_HANDLE) { xrDestroyAction(actionToggleProjection_); actionToggleProjection_ = XR_NULL_HANDLE; }
         if (actionOptionalPack_ != XR_NULL_HANDLE) { xrDestroyAction(actionOptionalPack_); actionOptionalPack_ = XR_NULL_HANDLE; }
+        if (actionAimPose_ != XR_NULL_HANDLE) { xrDestroyAction(actionAimPose_); actionAimPose_ = XR_NULL_HANDLE; }
         if (actionSet_ != XR_NULL_HANDLE) {
             xrDestroyActionSet(actionSet_);
             actionSet_ = XR_NULL_HANDLE;
         }
         leftHandPath_ = XR_NULL_PATH;
         rightHandPath_ = XR_NULL_PATH;
+        hudPointerLeftVisible_ = false;
+        hudPointerRightVisible_ = false;
 
         if (xrInstance_ != XR_NULL_HANDLE) {
             xrDestroyInstance(xrInstance_);
@@ -2807,8 +3190,12 @@ private:
     XrAction actionTogglePlay_{XR_NULL_HANDLE};
     XrAction actionNextTrack_{XR_NULL_HANDLE};
     XrAction actionPrevTrack_{XR_NULL_HANDLE};
+    XrAction actionCycleAudioInput_{XR_NULL_HANDLE};
     XrAction actionToggleProjection_{XR_NULL_HANDLE};
     XrAction actionOptionalPack_{XR_NULL_HANDLE};
+    XrAction actionAimPose_{XR_NULL_HANDLE};
+    XrSpace leftAimSpace_{XR_NULL_HANDLE};
+    XrSpace rightAimSpace_{XR_NULL_HANDLE};
 
     std::vector<XrViewConfigurationView> viewConfigs_;
     std::vector<XrView> xrViews_;
@@ -2832,6 +3219,8 @@ private:
     GLint hudFlashLtLoc_{-1};
     GLint hudFlashMenuLoc_{-1};
     GLint hudStatusLoc_{-1};
+    GLint hudPointerLeftLoc_{-1};
+    GLint hudPointerRightLoc_{-1};
     GLint hudTextSamplerLoc_{-1};
     GLuint hudTextTexture_{0};
     std::vector<uint8_t> hudTextPixels_;
@@ -2877,6 +3266,10 @@ private:
     float hudFlashMenu_{0.0f};
     bool rightTriggerPressed_{false};
     bool leftTriggerPressed_{false};
+    bool hudPointerLeftVisible_{false};
+    bool hudPointerRightVisible_{false};
+    glm::vec2 hudPointerLeftUv_{0.5f, 0.5f};
+    glm::vec2 hudPointerRightUv_{0.5f, 0.5f};
     double hudVisibleUntilSeconds_{kHudVisibleOnStartSeconds};
     double hudInputFeedbackUntilSeconds_{0.0};
 
@@ -2938,8 +3331,10 @@ Java_com_projectm_questxr_QuestNativeActivity_nativeUpdateUiState(
         g_audioMode = AudioMode::Synthetic;
     } else if (audioMode == 1) {
         g_audioMode = AudioMode::GlobalCapture;
-    } else {
+    } else if (audioMode == 2) {
         g_audioMode = AudioMode::MediaFallback;
+    } else {
+        g_audioMode = AudioMode::Microphone;
     }
 
     g_mediaPlaying = mediaPlaying == JNI_TRUE;
