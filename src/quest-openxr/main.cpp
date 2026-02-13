@@ -59,8 +59,9 @@ constexpr double kPresetScanIntervalSeconds = 10.0;
 constexpr double kAudioFallbackDelaySeconds = 3.0;
 constexpr size_t kMaxQueuedAudioFrames = 48000 * 2;
 constexpr float kHudDistance = 0.72f;
-constexpr float kHudDistanceHandTracking = 0.42f;
+constexpr float kHudDistanceHandTracking = 0.55f;
 constexpr float kHudVerticalOffset = -0.27f;
+constexpr float kHudVerticalOffsetHandTracking = -0.08f;
 constexpr float kHudWidth = 0.68f;
 constexpr float kHudHeight = 0.34f;
 constexpr double kHudVisibleOnStartSeconds = 8.0;
@@ -70,9 +71,10 @@ constexpr double kHudInputFeedbackSeconds = 1.4;
 constexpr float kTriggerPressThreshold = 0.75f;
 constexpr double kHandModeSwitchToHandDebounceSeconds = 0.08;
 constexpr double kHandModeSwitchToControllerDebounceSeconds = 0.16;
-constexpr float kHudTouchHoverDistance = 0.10f;
-constexpr float kHudTouchActivationDistance = 0.030f;
-constexpr float kHudTouchMaxPenetration = 0.025f;
+constexpr float kHudTouchHoverDistance = 0.030f;
+constexpr float kHudTouchActivationDistance = 0.010f;
+constexpr float kHudTouchMaxPenetration = 0.015f;
+constexpr float kHudTouchForwardOffset = 0.007f;
 constexpr float kHudFlashPeak = 1.35f;
 constexpr double kRuntimePropertyPollIntervalSeconds = 1.0;
 constexpr double kPerfGraceAfterPresetSwitchSeconds = 4.0;
@@ -1587,15 +1589,6 @@ private:
                 return clamp(outer - inner, 0.0, 1.0);
             }
 
-            float handOutlineMask(vec2 uv, vec2 tip, float handedness) {
-                float palm = ringMask(uv, tip + vec2(0.0, -0.040), 0.058, 0.047, 0.0065);
-                float thumb = ringMask(uv, tip + vec2(handedness * 0.032, -0.026), 0.021, 0.014, 0.0055);
-                float index = ringMask(uv, tip + vec2(handedness * -0.010, -0.008), 0.015, 0.008, 0.0045);
-                float middle = ringMask(uv, tip + vec2(handedness * 0.004, -0.010), 0.015, 0.008, 0.0045);
-                float ring = ringMask(uv, tip + vec2(handedness * 0.018, -0.012), 0.014, 0.0075, 0.0045);
-                return clamp(max(max(palm, thumb), max(index, max(middle, ring))), 0.0, 1.0);
-            }
-
             void main() {
                 vec3 color = vec3(0.0);
                 float alpha = rectMask(vUv, vec2(0.015, 0.02), vec2(0.985, 0.985), 0.0035) * 0.62;
@@ -1656,12 +1649,11 @@ private:
                     color = mix(color, vec3(0.30, 0.88, 0.92), rayMask * 0.90);
                     alpha = max(alpha, rayMask * 0.95);
 
-                    float touchOutline = handOutlineMask(vUv, uPointerLeft.xy, -1.0) * isTouch;
-                    float touchHover = ringMask(vUv, uPointerLeft.xy, 0.020, 0.009, 0.0030) * isTouch;
-                    float touchPress = pointerMask(vUv, uPointerLeft.xy, 0.009, 0.0025) * isTouch * isTouchActive;
-                    float touchMask = clamp(touchOutline + touchHover + touchPress, 0.0, 1.0);
-                    color = mix(color, vec3(0.74, 0.96, 0.98), touchMask * (0.70 + 0.25 * isTouchActive));
-                    alpha = max(alpha, touchMask * 0.92);
+                    float touchDot = pointerMask(vUv, uPointerLeft.xy, 0.0045, 0.0015) * isTouch;
+                    float touchPress = pointerMask(vUv, uPointerLeft.xy, 0.0070, 0.0018) * isTouch * isTouchActive;
+                    float touchMask = max(touchDot, touchPress);
+                    color = mix(color, vec3(0.74, 0.96, 0.98), touchMask * (0.55 + 0.35 * isTouchActive));
+                    alpha = max(alpha, touchMask * 0.85);
                 }
                 if (uPointerRight.z > 0.5) {
                     float isTouch = step(1.5, uPointerRight.w);
@@ -1673,12 +1665,11 @@ private:
                     color = mix(color, vec3(0.98, 0.72, 0.30), rayMask * 0.90);
                     alpha = max(alpha, rayMask * 0.95);
 
-                    float touchOutline = handOutlineMask(vUv, uPointerRight.xy, 1.0) * isTouch;
-                    float touchHover = ringMask(vUv, uPointerRight.xy, 0.020, 0.009, 0.0030) * isTouch;
-                    float touchPress = pointerMask(vUv, uPointerRight.xy, 0.009, 0.0025) * isTouch * isTouchActive;
-                    float touchMask = clamp(touchOutline + touchHover + touchPress, 0.0, 1.0);
-                    color = mix(color, vec3(1.00, 0.93, 0.75), touchMask * (0.70 + 0.25 * isTouchActive));
-                    alpha = max(alpha, touchMask * 0.92);
+                    float touchDot = pointerMask(vUv, uPointerRight.xy, 0.0045, 0.0015) * isTouch;
+                    float touchPress = pointerMask(vUv, uPointerRight.xy, 0.0070, 0.0018) * isTouch * isTouchActive;
+                    float touchMask = max(touchDot, touchPress);
+                    color = mix(color, vec3(1.00, 0.93, 0.75), touchMask * (0.55 + 0.35 * isTouchActive));
+                    alpha = max(alpha, touchMask * 0.85);
                 }
 
                 fragColor = vec4(color, alpha);
@@ -2604,6 +2595,13 @@ private:
         return std::min(hudDistance_, kHudDistanceHandTracking);
     }
 
+    float EffectiveHudVerticalOffset() const {
+        if (!hudHandTrackingActive_) {
+            return hudVerticalOffset_;
+        }
+        return std::max(hudVerticalOffset_, kHudVerticalOffsetHandTracking);
+    }
+
     HudPanelFrame BuildHudPanelFrame(const XrPosef& headPose) const {
         const glm::vec3 headPosition(headPose.position.x, headPose.position.y, headPose.position.z);
         const glm::quat headOrientation(headPose.orientation.w,
@@ -2611,8 +2609,9 @@ private:
                                         headPose.orientation.y,
                                         headPose.orientation.z);
         const float hudDistance = EffectiveHudDistance();
+        const float hudVerticalOffset = EffectiveHudVerticalOffset();
         HudPanelFrame panel{};
-        panel.position = headPosition + headOrientation * glm::vec3(0.0f, hudVerticalOffset_, -hudDistance);
+        panel.position = headPosition + headOrientation * glm::vec3(0.0f, hudVerticalOffset, -hudDistance);
         panel.right = glm::normalize(headOrientation * glm::vec3(1.0f, 0.0f, 0.0f));
         panel.up = glm::normalize(headOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
         panel.normal = glm::normalize(headOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
@@ -2724,6 +2723,47 @@ private:
         return true;
     }
 
+    XrPosef BuildCenterHeadPose(uint32_t viewCount) const {
+        XrPosef pose{};
+        pose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
+        pose.position = {0.0f, 0.0f, 0.0f};
+        if (viewCount == 0) {
+            return pose;
+        }
+        if (viewCount == 1) {
+            return xrViews_[0].pose;
+        }
+
+        const XrPosef& leftPose = xrViews_[0].pose;
+        const XrPosef& rightPose = xrViews_[1].pose;
+        const glm::vec3 leftPosition(leftPose.position.x, leftPose.position.y, leftPose.position.z);
+        const glm::vec3 rightPosition(rightPose.position.x, rightPose.position.y, rightPose.position.z);
+        const glm::vec3 centerPosition = (leftPosition + rightPosition) * 0.5f;
+
+        glm::quat leftOrientation(leftPose.orientation.w,
+                                  leftPose.orientation.x,
+                                  leftPose.orientation.y,
+                                  leftPose.orientation.z);
+        glm::quat rightOrientation(rightPose.orientation.w,
+                                   rightPose.orientation.x,
+                                   rightPose.orientation.y,
+                                   rightPose.orientation.z);
+        if (glm::dot(leftOrientation, rightOrientation) < 0.0f) {
+            rightOrientation = -rightOrientation;
+        }
+
+        glm::quat centerOrientation = leftOrientation + rightOrientation;
+        if (glm::length(centerOrientation) < 1.0e-5f) {
+            centerOrientation = leftOrientation;
+        } else {
+            centerOrientation = glm::normalize(centerOrientation);
+        }
+
+        pose.orientation = {centerOrientation.x, centerOrientation.y, centerOrientation.z, centerOrientation.w};
+        pose.position = {centerPosition.x, centerPosition.y, centerPosition.z};
+        return pose;
+    }
+
     bool RaycastHudPanel(const HudPanelFrame& panel, const XrPosef& aimPose, glm::vec2& uvOut) const {
         const glm::vec3 origin(aimPose.position.x, aimPose.position.y, aimPose.position.z);
         const glm::quat orientation(aimPose.orientation.w,
@@ -2764,11 +2804,22 @@ private:
         }
 
         const uint32_t indexTip = static_cast<uint32_t>(XR_HAND_JOINT_INDEX_TIP_EXT);
+        const uint32_t indexDistal = static_cast<uint32_t>(XR_HAND_JOINT_INDEX_DISTAL_EXT);
         if (indexTip >= XR_HAND_JOINT_COUNT_EXT || handState.tracked[indexTip] == 0) {
             return false;
         }
 
-        pointOut = handState.positions[indexTip];
+        glm::vec3 touchPoint = handState.positions[indexTip];
+        if (indexDistal < XR_HAND_JOINT_COUNT_EXT && handState.tracked[indexDistal] != 0) {
+            const glm::vec3 distal = handState.positions[indexDistal];
+            const glm::vec3 tipDirection = touchPoint - distal;
+            const float tipDirectionLength = glm::length(tipDirection);
+            if (tipDirectionLength > 1.0e-5f) {
+                touchPoint += (tipDirection / tipDirectionLength) * kHudTouchForwardOffset;
+            }
+        }
+
+        pointOut = touchPoint;
         return true;
     }
 
@@ -3359,7 +3410,7 @@ private:
 
         const glm::vec3 basePosition(pose.position.x, pose.position.y, pose.position.z);
         const glm::quat baseOrientation(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
-        const glm::vec3 panelOffset = baseOrientation * glm::vec3(0.0f, hudVerticalOffset_, -EffectiveHudDistance());
+        const glm::vec3 panelOffset = baseOrientation * glm::vec3(0.0f, EffectiveHudVerticalOffset(), -EffectiveHudDistance());
         const glm::vec3 panelPosition = basePosition + panelOffset;
 
         glm::mat4 model = glm::translate(glm::mat4(1.0f), panelPosition) * glm::mat4_cast(baseOrientation);
@@ -3576,9 +3627,11 @@ private:
                 LOGE("xrLocateViews failed.");
                 exitRenderLoop_ = true;
             } else {
+                XrPosef centerHeadPose{};
                 if (viewCountOutput > 0) {
+                    centerHeadPose = BuildCenterHeadPose(viewCountOutput);
                     UpdateHandJointRenderState(frameState.predictedDisplayTime);
-                    PollInputActions(nowSeconds, frameState.predictedDisplayTime, xrViews_[0].pose);
+                    PollInputActions(nowSeconds, frameState.predictedDisplayTime, centerHeadPose);
                 } else {
                     hudHandTrackingActive_ = false;
                     hudPointerLeftVisible_ = false;
@@ -3644,7 +3697,7 @@ private:
                     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
                     glBindVertexArray(0);
 
-                    RenderHud(projection, view, xrViews_[viewIndex].pose, nowSeconds);
+                    RenderHud(projection, view, centerHeadPose, nowSeconds);
                     RenderHandJoints(viewProjection);
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
