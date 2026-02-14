@@ -2,7 +2,9 @@ package com.projectm.questxr;
 
 import android.Manifest;
 import android.app.NativeActivity;
+import android.content.ContentUris;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.media.AudioFormat;
 import android.media.AudioAttributes;
 import android.media.AudioRecord;
@@ -19,6 +21,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
@@ -38,8 +41,10 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
@@ -55,7 +60,14 @@ public class QuestNativeActivity extends NativeActivity {
     private static final int AUDIO_MODE_MEDIA_FALLBACK = 2;
     private static final int AUDIO_MODE_MICROPHONE = 3;
     private static final float VISUALIZER_GAIN_GLOBAL = 1.0f;
-    private static final float VISUALIZER_GAIN_MEDIA = 1.2f;
+    private static final float VISUALIZER_GAIN_MEDIA = 3.5f;
+    private static final float VISUALIZER_TARGET_RMS_GLOBAL = 0.12f;
+    private static final float VISUALIZER_TARGET_RMS_MEDIA = 0.24f;
+    private static final float VISUALIZER_MIN_RMS_FOR_BOOST = 0.0025f;
+    private static final float VISUALIZER_MAX_ADAPTIVE_GAIN_GLOBAL = 3.0f;
+    private static final float VISUALIZER_MAX_ADAPTIVE_GAIN_MEDIA = 14.0f;
+    private static final float VISUALIZER_GAIN_ATTACK = 0.42f;
+    private static final float VISUALIZER_GAIN_RELEASE = 0.10f;
     private static final float MICROPHONE_GAIN = 4.5f;
     private static final float MICROPHONE_TARGET_RMS = 0.16f;
     private static final float MICROPHONE_MIN_RMS_FOR_BOOST = 0.00025f;
@@ -72,7 +84,22 @@ public class QuestNativeActivity extends NativeActivity {
     private static final float MICROPHONE_BEAT_DECAY_PER_SAMPLE = 0.9935f;
     private static final float MICROPHONE_BEAT_KICK_HZ = 82.0f;
     private static final long MICROPHONE_LEVEL_LOG_INTERVAL_MS = 2000L;
-    private static final float ACTIVE_WAVEFORM_RMS_THRESHOLD = 0.010f;
+    private static final float ACTIVE_WAVEFORM_RMS_THRESHOLD = 0.0045f;
+    private static final long MEDIA_CAPTURE_NO_CALLBACK_SWITCH_MS = 1800L;
+    private static final long MEDIA_CAPTURE_LOW_ENERGY_SWITCH_MS = 1400L;
+    private static final long MEDIA_CAPTURE_SWITCH_COOLDOWN_MS = 2200L;
+    private static final long MEDIA_CAPTURE_HEALTH_IDLE_CHECK_MS = 1200L;
+    private static final long MEDIA_CAPTURE_HEALTH_RETRY_MS = 1500L;
+
+    private static final class MediaSource {
+        final String source;
+        final String label;
+
+        MediaSource(String source, String label) {
+            this.source = source;
+            this.label = label;
+        }
+    }
 
     static {
         System.loadLibrary("projectm_quest_openxr");
@@ -86,6 +113,8 @@ public class QuestNativeActivity extends NativeActivity {
     private AudioRecord microphoneRecord;
     private Thread microphoneThread;
     private volatile boolean microphoneCaptureRunning;
+    private volatile float visualizerAdaptiveGainGlobal = 1.0f;
+    private volatile float visualizerAdaptiveGainMedia = 1.0f;
     private volatile float microphoneAdaptiveGain = 1.0f;
     private volatile float microphoneNoiseFloor = 0.00008f;
     private volatile float microphoneBeatPulse = 0.0f;
@@ -97,7 +126,7 @@ public class QuestNativeActivity extends NativeActivity {
     private AutomaticGainControl microphoneAgc;
     private NoiseSuppressor microphoneNoiseSuppressor;
     private AcousticEchoCanceler microphoneEchoCanceler;
-    private final List<String> mediaPlaylist = new ArrayList<>();
+    private final List<MediaSource> mediaPlaylist = new ArrayList<>();
     private int mediaPlaylistIndex = -1;
     private int audioMode = AUDIO_MODE_SYNTHETIC;
     private int preferredAudioMode = AUDIO_MODE_GLOBAL_CAPTURE;
@@ -434,7 +463,7 @@ public class QuestNativeActivity extends NativeActivity {
     }
 
     private boolean startGlobalOutputCaptureMode() {
-        if (!attachVisualizerToSession(0, "global output")) {
+        if (!attachVisualizerToSession(0, "system sound output")) {
             return false;
         }
         audioMode = AUDIO_MODE_GLOBAL_CAPTURE;
@@ -507,7 +536,9 @@ public class QuestNativeActivity extends NativeActivity {
             return false;
         }
 
-        final String source = mediaPlaylist.get(mediaPlaylistIndex);
+        final MediaSource selected = mediaPlaylist.get(mediaPlaylistIndex);
+        final String source = selected.source;
+        final String label = selected.label;
 
         try {
             releaseMediaPlayer();
@@ -531,7 +562,7 @@ public class QuestNativeActivity extends NativeActivity {
                     }
                     mediaPlaying = true;
                     audioMode = AUDIO_MODE_MEDIA_FALLBACK;
-                    currentMediaLabel = new File(source).getName();
+                    currentMediaLabel = label;
                     pushUiStateToNative();
                     Log.i(TAG, "Internal player audio started: " + source);
                 } catch (Throwable t) {
@@ -549,11 +580,14 @@ public class QuestNativeActivity extends NativeActivity {
 
             if (source.startsWith("http://") || source.startsWith("https://")) {
                 mediaPlayer.setDataSource(source);
-                currentMediaLabel = source;
+                currentMediaLabel = label;
+            } else if (source.startsWith("content://")) {
+                mediaPlayer.setDataSource(this, Uri.parse(source));
+                currentMediaLabel = label;
             } else {
                 File sourceFile = new File(source);
                 mediaPlayer.setDataSource(this, Uri.fromFile(sourceFile));
-                currentMediaLabel = sourceFile.getName();
+                currentMediaLabel = label;
             }
 
             audioMode = AUDIO_MODE_MEDIA_FALLBACK;
@@ -570,11 +604,11 @@ public class QuestNativeActivity extends NativeActivity {
     }
 
     private boolean attachVisualizerForMedia(int mediaSessionId) {
-        // Prefer media-session capture for internal playback beat detection.
-        if (attachVisualizerToSession(mediaSessionId, "media session " + mediaSessionId)) {
+        // Prefer system-sound capture first; some Quest builds return low-energy data on per-session capture.
+        if (attachVisualizerToSession(0, "system sound")) {
             return true;
         }
-        return attachVisualizerToSession(0, "global mixer");
+        return attachVisualizerToSession(mediaSessionId, "media session " + mediaSessionId);
     }
 
     private boolean attachVisualizerToSession(int audioSessionId, String sourceLabel) {
@@ -582,7 +616,7 @@ public class QuestNativeActivity extends NativeActivity {
             releaseVisualizer();
             visualizer = new Visualizer(audioSessionId);
             visualizer.setCaptureSize(Visualizer.getCaptureSizeRange()[1]);
-            int captureRate = Math.max(Visualizer.getMaxCaptureRate() / 2, 10000);
+            int captureRate = Math.max(Visualizer.getMaxCaptureRate(), 10000);
             visualizer.setDataCaptureListener(
                     new Visualizer.OnDataCaptureListener() {
                         @Override
@@ -1023,12 +1057,16 @@ public class QuestNativeActivity extends NativeActivity {
                     String source = line.trim();
                     if (!source.isEmpty()) {
                         if (source.startsWith("http://") || source.startsWith("https://")) {
-                            mediaPlaylist.add(source);
+                            mediaPlaylist.add(new MediaSource(source, source));
+                            return;
+                        }
+                        if (source.startsWith("content://")) {
+                            mediaPlaylist.add(new MediaSource(source, source));
                             return;
                         }
                         File sourceFile = new File(source);
                         if (sourceFile.exists()) {
-                            mediaPlaylist.add(sourceFile.getAbsolutePath());
+                            mediaPlaylist.add(new MediaSource(sourceFile.getAbsolutePath(), sourceFile.getName()));
                             return;
                         }
                     }
@@ -1038,17 +1076,84 @@ public class QuestNativeActivity extends NativeActivity {
             }
         }
 
-        List<String> discovered = new ArrayList<>();
+        List<MediaSource> discovered = new ArrayList<>();
         File appMusic = getExternalFilesDir(Environment.DIRECTORY_MUSIC);
         collectAudioFiles(appMusic, 3, discovered);
 
         File publicMusic = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
         collectAudioFiles(publicMusic, 4, discovered);
-        Collections.sort(discovered);
-        mediaPlaylist.addAll(discovered);
+        collectMediaStoreAudio(discovered);
+
+        Collections.sort(discovered, (a, b) -> {
+            int byLabel = a.label.compareToIgnoreCase(b.label);
+            if (byLabel != 0) {
+                return byLabel;
+            }
+            return a.source.compareToIgnoreCase(b.source);
+        });
+
+        Set<String> dedupe = new HashSet<>();
+        for (MediaSource source : discovered) {
+            if (dedupe.add(source.source)) {
+                mediaPlaylist.add(source);
+            }
+        }
+
+        Log.i(TAG, "Rebuilt internal player playlist. Found " + mediaPlaylist.size() + " source(s).");
     }
 
-    private void collectAudioFiles(File dir, int depthRemaining, List<String> out) {
+    private void collectMediaStoreAudio(List<MediaSource> out) {
+        if (out == null || !hasAudioReadPermission()) {
+            return;
+        }
+
+        String[] projection = {
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME
+        };
+        String selection = MediaStore.Audio.Media.IS_MUSIC + "!=0";
+        String sortOrder = MediaStore.Audio.Media.DISPLAY_NAME + " COLLATE NOCASE ASC";
+
+        try (Cursor cursor = getContentResolver().query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                sortOrder
+        )) {
+            if (cursor == null) {
+                return;
+            }
+            int idColumn = cursor.getColumnIndex(MediaStore.Audio.Media._ID);
+            int nameColumn = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME);
+            if (idColumn < 0 || nameColumn < 0) {
+                return;
+            }
+
+            while (cursor.moveToNext()) {
+                long id = cursor.getLong(idColumn);
+                String displayName = cursor.getString(nameColumn);
+                if (displayName == null || displayName.trim().isEmpty()) {
+                    displayName = "track_" + id;
+                }
+                Uri contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+                out.add(new MediaSource(contentUri.toString(), displayName));
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to query MediaStore audio library", t);
+        }
+    }
+
+    private boolean hasAudioReadPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED;
+        }
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void collectAudioFiles(File dir, int depthRemaining, List<MediaSource> out) {
         if (dir == null || out == null || depthRemaining < 0 || !dir.exists() || !dir.isDirectory()) {
             return;
         }
@@ -1060,7 +1165,7 @@ public class QuestNativeActivity extends NativeActivity {
 
         for (File child : children) {
             if (child.isFile() && isAudioExtension(child.getName())) {
-                out.add(child.getAbsolutePath());
+                out.add(new MediaSource(child.getAbsolutePath(), child.getName()));
             }
         }
 
@@ -1086,12 +1191,42 @@ public class QuestNativeActivity extends NativeActivity {
             return;
         }
         lastWaveformCaptureUptimeMs = SystemClock.uptimeMillis();
-        float gain = audioMode == AUDIO_MODE_MEDIA_FALLBACK
-                ? VISUALIZER_GAIN_MEDIA
-                : VISUALIZER_GAIN_GLOBAL;
+        boolean mediaMode = audioMode == AUDIO_MODE_MEDIA_FALLBACK;
+        float baseGain = mediaMode ? VISUALIZER_GAIN_MEDIA : VISUALIZER_GAIN_GLOBAL;
+        float targetRms = mediaMode ? VISUALIZER_TARGET_RMS_MEDIA : VISUALIZER_TARGET_RMS_GLOBAL;
+        float maxAdaptive = mediaMode ? VISUALIZER_MAX_ADAPTIVE_GAIN_MEDIA : VISUALIZER_MAX_ADAPTIVE_GAIN_GLOBAL;
+        float adaptiveGain = mediaMode ? visualizerAdaptiveGainMedia : visualizerAdaptiveGainGlobal;
 
         int frames = waveform.length;
         float[] stereo = new float[frames * 2];
+        float inputSumSquares = 0.0f;
+
+        for (int i = 0; i < frames; i++) {
+            float centered = ((waveform[i] & 0xFF) - 128.0f) / 128.0f;
+            inputSumSquares += centered * centered;
+        }
+
+        float inputRms = (float) Math.sqrt(inputSumSquares / Math.max(1, frames));
+        float desiredAdaptiveGain = 1.0f;
+        if (inputRms >= VISUALIZER_MIN_RMS_FOR_BOOST) {
+            float preAdaptiveRms = inputRms * baseGain;
+            desiredAdaptiveGain = targetRms / Math.max(preAdaptiveRms, 0.000001f);
+            if (desiredAdaptiveGain < 1.0f) {
+                desiredAdaptiveGain = 1.0f;
+            } else if (desiredAdaptiveGain > maxAdaptive) {
+                desiredAdaptiveGain = maxAdaptive;
+            }
+        }
+
+        float lerp = desiredAdaptiveGain > adaptiveGain ? VISUALIZER_GAIN_ATTACK : VISUALIZER_GAIN_RELEASE;
+        adaptiveGain += (desiredAdaptiveGain - adaptiveGain) * lerp;
+        if (mediaMode) {
+            visualizerAdaptiveGainMedia = adaptiveGain;
+        } else {
+            visualizerAdaptiveGainGlobal = adaptiveGain;
+        }
+
+        float gain = baseGain * adaptiveGain;
         float sumSquares = 0.0f;
 
         for (int i = 0; i < frames; i++) {
@@ -1148,7 +1283,7 @@ public class QuestNativeActivity extends NativeActivity {
         lastWaveformCaptureUptimeMs = SystemClock.uptimeMillis();
         lastWaveformEnergyUptimeMs = lastWaveformCaptureUptimeMs;
         mediaCaptureLastSwitchUptimeMs = lastWaveformCaptureUptimeMs;
-        mainHandler.postDelayed(mediaCaptureHealthCheckRunnable, 1800);
+        mainHandler.postDelayed(mediaCaptureHealthCheckRunnable, MEDIA_CAPTURE_NO_CALLBACK_SWITCH_MS);
     }
 
     private void clearMediaCaptureHealthCheck() {
@@ -1163,26 +1298,33 @@ public class QuestNativeActivity extends NativeActivity {
         }
 
         long nowMs = SystemClock.uptimeMillis();
-        long silentForMs = nowMs - lastWaveformEnergyUptimeMs;
-        if (silentForMs < 1400) {
-            mainHandler.postDelayed(mediaCaptureHealthCheckRunnable, 1200);
+        long noWaveformForMs = nowMs - lastWaveformCaptureUptimeMs;
+        long lowEnergyForMs = nowMs - lastWaveformEnergyUptimeMs;
+        boolean callbacksStalled = noWaveformForMs >= MEDIA_CAPTURE_NO_CALLBACK_SWITCH_MS;
+        boolean energyStalled = lowEnergyForMs >= MEDIA_CAPTURE_LOW_ENERGY_SWITCH_MS;
+        if (!callbacksStalled && !energyStalled) {
+            mainHandler.postDelayed(mediaCaptureHealthCheckRunnable, MEDIA_CAPTURE_HEALTH_IDLE_CHECK_MS);
             return;
         }
 
-        if (mediaCaptureExpectedSessionId >= 0 && nowMs - mediaCaptureLastSwitchUptimeMs >= 2200) {
+        if (mediaCaptureExpectedSessionId >= 0
+                && nowMs - mediaCaptureLastSwitchUptimeMs >= MEDIA_CAPTURE_SWITCH_COOLDOWN_MS) {
             int retrySessionId = activeVisualizerSessionId == mediaCaptureExpectedSessionId
                     ? 0
                     : mediaCaptureExpectedSessionId;
             if (attachVisualizerToSession(
                     retrySessionId,
-                    retrySessionId == 0 ? "global mixer retry" : "media session retry")) {
+                    retrySessionId == 0 ? "system sound retry" : "media session retry")) {
                 mediaCaptureLastSwitchUptimeMs = nowMs;
                 lastWaveformCaptureUptimeMs = nowMs;
+                lastWaveformEnergyUptimeMs = nowMs;
+                String reason = callbacksStalled
+                        ? "No media waveform callbacks for " + noWaveformForMs + " ms"
+                        : "Low-energy media waveform (silent for " + lowEnergyForMs + " ms)";
                 Log.w(TAG,
-                        "Low-energy media waveform (silent for " + silentForMs
-                                + " ms); switched capture session to " + retrySessionId + ".");
+                        reason + "; switched capture session to " + retrySessionId + ".");
             }
         }
-        mainHandler.postDelayed(mediaCaptureHealthCheckRunnable, 1500);
+        mainHandler.postDelayed(mediaCaptureHealthCheckRunnable, MEDIA_CAPTURE_HEALTH_RETRY_MS);
     }
 }
