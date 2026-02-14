@@ -12,9 +12,9 @@ This Android Studio project packages an experimental Quest-compatible `NativeAct
 This is an integration prototype, not a production-ready headset app yet.
 
 - Audio input pipeline:
-  - Supports explicit source switching in-headset: `global mixer`, `media player fallback`, `microphone`, `synthetic`.
+  - Supports explicit source switching in-headset: `system sound`, `internal player audio`, `microphone`, `synthetic`.
   - On startup it still prefers global output capture first.
-  - Media fallback beat detection prefers global mixer capture and falls back to media-session capture.
+  - Internal player beat detection prefers system-sound capture and falls back to media-session capture.
   - If no capture source is available, native synthetic audio fallback remains active.
 - Presets:
   - Bundled starter presets still exist in APK assets.
@@ -102,7 +102,7 @@ Legacy controller bindings (still active):
 
 1. Right `A`: next preset
 2. Left `X`: previous preset
-3. Left `Y`: play/pause media fallback
+3. Left `Y`: play/pause internal player audio
 4. Right `B`: next media track
 5. Left thumbstick click (`L3`): previous media track
 6. Right thumbstick click (`R3`): cycle audio input source (`global` -> `media` -> `mic` -> `synthetic`)
@@ -118,7 +118,7 @@ HUD behavior:
 
 HUD status includes:
 
-- audio mode (`synthetic`, `global capture`, `media fallback`, `microphone`)
+- audio mode (`synthetic`, `system sound`, `internal player audio`, `microphone`)
 - projection mode (`sphere` or `dome`)
 - playback state (`playing`/`paused`)
 - current preset name
@@ -133,17 +133,28 @@ To enable download of `presets-cream-of-the-crop`, create this flag file and rel
 adb shell "mkdir -p /sdcard/Android/data/com.projectm.questxr/files && touch /sdcard/Android/data/com.projectm.questxr/files/enable_cream_download.flag"
 ```
 
-## Media Fallback Source
+## Internal Player Source
 
 If global output capture is unavailable, the app tries these sources in order:
 
 1. `media_source.txt` in app internal files (`http(s)` URL or absolute file path, first line only).
-2. First audio file found in app external music folder.
+2. Audio files in app external music folder.
 3. First audio file found in shared Music storage.
+
+Recommended way to add local tracks:
+
+```bash
+adb shell "mkdir -p /sdcard/Android/data/com.projectm.questxr/files/Music"
+adb push "/path/to/song1.flac" "/sdcard/Android/data/com.projectm.questxr/files/Music/"
+adb push "/path/to/song2.mp3" "/sdcard/Android/data/com.projectm.questxr/files/Music/"
+adb shell ls -lh "/sdcard/Android/data/com.projectm.questxr/files/Music"
+```
+
+If the HUD shows `internal_player_unavailable`, the player could not find any readable sources.
 
 Local file scan currently includes: `mp3`, `m4a`, `aac`, `ogg`, `wav`, `flac`.
 
-To set an explicit stream URL for fallback playback in debug builds:
+To set an explicit stream URL for internal player playback in debug builds:
 
 ```bash
 adb shell "run-as com.projectm.questxr sh -c 'printf %s https://example.com/stream.mp3 > files/media_source.txt'"

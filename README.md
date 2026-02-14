@@ -98,7 +98,7 @@ Controller bindings:
 
 - Right `A`: next preset
 - Left `X`: previous preset
-- Left `Y`: play/pause media fallback
+- Left `Y`: play/pause internal player audio
 - Right `B`: next media track
 - Left thumbstick click (`L3`): previous media track
 - Right thumbstick click (`R3`): cycle audio input source
