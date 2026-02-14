@@ -4,7 +4,7 @@
 
 This repo keeps the upstream `libprojectM` codebase and adds an experimental Quest host app with in-headset controls, audio input switching, and runtime tuning.
 
-Status: integration prototype (actively evolving), not a polished store-ready app.
+*Status: It works for my needs. it's a vibecoded app. Not sure how long i'll need mention that before it's vibecoding is asumed for all things, but hey ChatGPT5.3-high codex originally wrote all the stuff. I mostly complained about choices and tested. I was going to learn C++ to do this. Well, I guess there isn't a point to that now is there. I can retain my ignorance of memory management :) enjoy!*
 
 ## Photosensitivity warning
 
@@ -64,6 +64,28 @@ cd apps/quest-openxr-android
 ```bash
 adb shell am start -n com.projectm.questxr/.QuestNativeActivity
 ```
+
+## Add Music For Internal Player
+
+Copy your music files into the app music folder on Quest:
+
+```bash
+adb shell "mkdir -p /sdcard/Android/data/com.projectm.questxr/files/Music"
+adb push "/path/to/song1.flac" "/sdcard/Android/data/com.projectm.questxr/files/Music/"
+adb push "/path/to/song2.mp3" "/sdcard/Android/data/com.projectm.questxr/files/Music/"
+```
+
+Verify files are present:
+
+```bash
+adb shell ls -lh "/sdcard/Android/data/com.projectm.questxr/files/Music"
+```
+
+Notes:
+
+- Internal player scans this folder first each time you switch to internal player mode.
+- Supported file types include: `mp3`, `m4a`, `aac`, `ogg`, `wav`, `flac`.
+- If you see `internal_player_unavailable`, it usually means no readable audio files were found.
 
 ## In-headset controls
 
