@@ -41,6 +41,65 @@ export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
 
 The Gradle project invokes the root CMake build and enables `-DENABLE_QUEST_VR_APP=ON`.
 
+## Release Build + Signing
+
+Use the repository helper script for consistent Java/Gradle environment:
+
+```bash
+cd /home/here/Documents/swirl
+export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+./scripts/release-build.sh :app:assembleRelease
+```
+
+Release signing is optional and driven by environment variables (or Gradle properties with the same names):
+
+```bash
+export QUESTXR_RELEASE_STORE_FILE=/absolute/path/to/release-keystore.jks
+export QUESTXR_RELEASE_STORE_PASSWORD='your-store-password'
+export QUESTXR_RELEASE_KEY_ALIAS='your-key-alias'
+export QUESTXR_RELEASE_KEY_PASSWORD='your-key-password'
+```
+
+When all four variables are set, `:app:assembleRelease` produces a signed APK:
+
+- `apps/quest-openxr-android/app/build/outputs/apk/release/app-release.apk`
+
+When signing values are missing, release output is unsigned:
+
+- `apps/quest-openxr-android/app/build/outputs/apk/release/app-release-unsigned.apk`
+
+The script also writes a checksum file next to the artifact (`.sha256`).
+
+## GitHub Release Deployment
+
+Build + publish in one command:
+
+```bash
+cd /home/here/Documents/swirl
+./scripts/release-and-publish.sh v1.0.0
+```
+
+One-command upload helper:
+
+```bash
+cd /home/here/Documents/swirl
+./scripts/github-release.sh v1.0.0
+```
+
+Optional explicit title/notes:
+
+```bash
+./scripts/github-release.sh v1.0.0 "QuestXR v1.0.0" "Production release"
+./scripts/release-and-publish.sh v1.0.0 "QuestXR v1.0.0" "Production release"
+```
+
+Behavior:
+
+- Prefers signed APK (`app-release.apk`) when present.
+- Falls back to unsigned APK (`app-release-unsigned.apk`).
+- Uses existing `.sha256` if present, otherwise generates one.
+- Creates the release if tag does not exist; otherwise uploads/replaces assets on the existing release.
+
 ## Projection Modes
 
 - Default: full-sphere (`360 x 180` mapping).

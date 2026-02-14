@@ -2,6 +2,20 @@ plugins {
     id 'com.android.application'
 }
 
+def resolveSigningValue(String key) {
+    def fromProject = project.findProperty(key)
+    if (fromProject != null && !fromProject.toString().trim().isEmpty()) {
+        return fromProject.toString().trim()
+    }
+
+    def fromEnv = System.getenv(key)
+    if (fromEnv != null && !fromEnv.trim().isEmpty()) {
+        return fromEnv.trim()
+    }
+
+    return null
+}
+
 def resolveOpenxrSdkPath() {
     def propsFile = rootProject.file('local.properties')
     if (propsFile.exists()) {
@@ -39,6 +53,14 @@ def openxrSdkPath = resolveOpenxrSdkPath()
 def configureNativeBuild = openxrSdkPath != null
 def missingOpenxrPathMessage = "OpenXR SDK path not configured. Set OPENXR_SDK in the environment or set " +
         "'openxr.sdk=/path/to/openxr/cmake/prefix' in apps/quest-openxr-android/local.properties."
+def releaseStoreFile = resolveSigningValue('QUESTXR_RELEASE_STORE_FILE')
+def releaseStorePassword = resolveSigningValue('QUESTXR_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = resolveSigningValue('QUESTXR_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = resolveSigningValue('QUESTXR_RELEASE_KEY_PASSWORD')
+def releaseSigningEnabled = releaseStoreFile != null &&
+        releaseStorePassword != null &&
+        releaseKeyAlias != null &&
+        releaseKeyPassword != null
 
 if (openxrSdkPath == null) {
     if (shouldRequireOpenxrSdkPath()) {
@@ -81,6 +103,19 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningEnabled) {
+            release {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             debuggable true
@@ -88,6 +123,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (releaseSigningEnabled) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -109,4 +147,10 @@ android {
 
 dependencies {
     implementation 'androidx.core:core:1.13.1'
+}
+
+if (releaseSigningEnabled) {
+    logger.lifecycle("Release signing is configured from QUESTXR_RELEASE_* settings.")
+} else {
+    logger.lifecycle("Release signing is not configured. Release builds will be unsigned.")
 }
