@@ -4,6 +4,28 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_DIR="$ROOT_DIR/apps/quest-openxr-android"
 
+usage() {
+  cat <<'EOU'
+Usage:
+  ./scripts/release-build.sh [gradle_task]
+
+Examples:
+  ./scripts/release-build.sh
+  ./scripts/release-build.sh :app:assembleRelease
+EOU
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "$#" -gt 1 ]]; then
+  echo "ERROR: Expected at most one Gradle task argument." >&2
+  usage
+  exit 1
+fi
+
 if [[ -z "${JAVA_HOME:-}" ]]; then
   if [[ -d "/opt/android-studio/jbr" ]]; then
     export JAVA_HOME="/opt/android-studio/jbr"

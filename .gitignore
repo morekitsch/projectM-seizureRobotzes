@@ -62,3 +62,13 @@ cmake-build-*
 apps/quest-openxr-android/.gradle/
 apps/quest-openxr-android/**/build/
 apps/quest-openxr-android/local.properties
+
+# Local Android/Gradle and runtime artifacts
+.gradle/
+apps/quest-openxr-android/app/.cxx/
+release.txt
+logs/install-debug-*.log
+logs/live-*.log
+logs/quest-logcat*.log*
+logs/quest-logcat*.pid
+logs/quest-*-latest.path
