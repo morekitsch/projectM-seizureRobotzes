@@ -30,6 +30,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <sys/system_properties.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -47,8 +48,10 @@ constexpr char kLogTag[] = "projectM-QuestXR";
 
 constexpr float kNearZ = 0.05f;
 constexpr float kFarZ = 100.0f;
-constexpr uint32_t kProjectMWidth = 3072;
-constexpr uint32_t kProjectMHeight = 1536;
+constexpr uint32_t kProjectMOutputWidthSgsr = 3072;
+constexpr uint32_t kProjectMOutputHeightSgsr = 1536;
+constexpr uint32_t kProjectMOutputWidthNative = 2048;
+constexpr uint32_t kProjectMOutputHeightNative = 1024;
 constexpr float kDefaultProjectMRenderScale = 0.58f;
 constexpr float kMinProjectMRenderScale = 0.50f;
 constexpr int kMinProjectMRenderWidth = 512;
@@ -99,6 +102,11 @@ constexpr float kDefaultPerfAutoScaleDownFps = 68.0f;
 constexpr float kDefaultPerfAutoScaleUpFps = 71.0f;
 constexpr double kDefaultPerfAutoScaleHoldSeconds = 1.4;
 constexpr double kDefaultPerfAutoScaleCooldownSeconds = 1.5;
+constexpr double kDefaultPerfSlowRetryCooldownSeconds = 180.0;
+constexpr double kDefaultPerfSlowRetryProbeIntervalSeconds = 45.0;
+constexpr double kDefaultPerfSlowRetryWarmupSeconds = 10.0;
+constexpr double kDefaultPerfRepeatSlowSkipHoldScale = 0.60;
+constexpr double kDefaultPerfRepeatSlowSkipMinHoldSeconds = 0.8;
 constexpr double kRenderStatsLogIntervalSeconds = 5.0;
 constexpr int kDefaultMeshWidth = 64;
 constexpr int kDefaultMeshHeight = 48;
@@ -111,6 +119,10 @@ constexpr int kHudDetailScale = 2;
 constexpr int kHudActionScale = 4;
 constexpr int kHudInputScale = 3;
 constexpr int kHudTriggerScale = 3;
+constexpr size_t kMaxPresetHudLabelChars = 160;
+constexpr double kPresetMarqueeHoldSeconds = 1.2;
+constexpr double kPresetMarqueeStepSeconds = 0.22;
+constexpr int kPresetMarqueeGapChars = 6;
 
 struct HudRect {
     float minU;
@@ -123,6 +135,8 @@ constexpr HudRect kHudRectPrevPreset{0.07f, 0.46f, 0.60f, 0.82f};
 constexpr HudRect kHudRectNextPreset{0.54f, 0.93f, 0.60f, 0.82f};
 constexpr HudRect kHudRectTogglePlay{0.07f, 0.46f, 0.30f, 0.52f};
 constexpr HudRect kHudRectNextTrack{0.54f, 0.93f, 0.30f, 0.52f};
+constexpr HudRect kHudRectFavorite{0.07f, 0.46f, 0.535f, 0.585f};
+constexpr HudRect kHudRectPresetLock{0.54f, 0.93f, 0.535f, 0.585f};
 constexpr HudRect kHudRectPack{0.07f, 0.33f, 0.08f, 0.24f};
 constexpr HudRect kHudRectCenter{0.37f, 0.63f, 0.08f, 0.24f};
 constexpr HudRect kHudRectProjection{0.67f, 0.93f, 0.08f, 0.24f};
@@ -138,9 +152,19 @@ enum class HudButtonId : uint8_t {
     NextPreset = 2,
     TogglePlay = 3,
     NextTrack = 4,
-    OptionalPack = 5,
-    CycleAudio = 6,
-    ToggleProjection = 7,
+    ToggleFavorite = 5,
+    TogglePresetLock = 6,
+    ToggleUtilityPanel = 7,
+    OptionalPack = 8,
+    CycleAudio = 9,
+    ToggleProjection = 10,
+    ToggleFavoritesOnly = 11,
+};
+
+enum class FavoritesOnlyFilterToggleResult : uint8_t {
+    Disabled = 0,
+    Enabled = 1,
+    NoFavorites = 2,
 };
 
 enum class HudPointerMode : uint8_t {
@@ -866,6 +890,50 @@ int MeasureHudTextWidth(const std::string& text, int scale) {
     }
     const int advance = (kHudGlyphWidth + 1) * scale;
     return static_cast<int>(text.size()) * advance - scale;
+}
+
+int MaxHudTextCharsForWidth(int scale, int maxPixelWidth) {
+    if (scale <= 0 || maxPixelWidth <= 0) {
+        return 0;
+    }
+
+    const int advance = (kHudGlyphWidth + 1) * scale;
+    return std::max(0, (maxPixelWidth + scale) / advance);
+}
+
+std::string BuildHudMarqueeText(const std::string& text,
+                                int visibleChars,
+                                double nowSeconds,
+                                double marqueeStartSeconds) {
+    if (text.empty() || visibleChars <= 0) {
+        return std::string();
+    }
+    if (static_cast<int>(text.size()) <= visibleChars) {
+        return text;
+    }
+
+    const std::string gap(static_cast<size_t>(kPresetMarqueeGapChars), ' ');
+    const std::string loopText = text + gap;
+    if (loopText.empty()) {
+        return text.substr(0, static_cast<size_t>(visibleChars));
+    }
+
+    double elapsed = std::max(0.0, nowSeconds - marqueeStartSeconds);
+    if (elapsed < kPresetMarqueeHoldSeconds) {
+        return text.substr(0, static_cast<size_t>(visibleChars));
+    }
+    elapsed -= kPresetMarqueeHoldSeconds;
+
+    const size_t step = static_cast<size_t>(std::floor(elapsed / kPresetMarqueeStepSeconds));
+    const size_t offset = step % loopText.size();
+
+    std::string window;
+    window.reserve(static_cast<size_t>(visibleChars));
+    for (int i = 0; i < visibleChars; ++i) {
+        const size_t index = (offset + static_cast<size_t>(i)) % loopText.size();
+        window.push_back(loopText[index]);
+    }
+    return window;
 }
 
 std::string FitHudTextToWidth(const std::string& text, int scale, int maxPixelWidth) {
@@ -2339,7 +2407,7 @@ private:
             return false;
         }
 
-        projectm_set_window_size(projectM_, kProjectMWidth, kProjectMHeight);
+        projectm_set_window_size(projectM_, projectMOutputWidth_, projectMOutputHeight_);
         meshWidth_ = kDefaultMeshWidth;
         meshHeight_ = kDefaultMeshHeight;
         projectm_set_mesh_size(projectM_, meshWidth_, meshHeight_);
@@ -2353,6 +2421,7 @@ private:
         const std::string textureOutputDir = appDataPath + "/textures";
         presetDirectory_ = presetOutputDir;
         slowPresetFilePath_ = appDataPath.empty() ? std::string() : (appDataPath + "/slow_presets.txt");
+        favoritePresetFilePath_ = appDataPath.empty() ? std::string() : (appDataPath + "/favorite_presets.txt");
 
         if (app_->activity->assetManager != nullptr) {
             CopyAssetDirectoryFlat(app_->activity->assetManager, "presets", presetOutputDir);
@@ -2360,7 +2429,9 @@ private:
         }
 
         LoadSlowPresetList();
+        LoadFavoritePresetList();
         presetFiles_ = CollectPresetFiles(presetOutputDir);
+        InvalidateSelectablePresetCountCache();
         if (!presetFiles_.empty()) {
             currentPresetIndex_ = 0;
             if (skipMarkedPresets_) {
@@ -2490,19 +2561,23 @@ private:
 
         const bool sgsrAvailable = sgsrProgram_ != 0 && sgsrVao_ != 0;
         const bool useUpscaler = sgsrEnabled_ && sgsrAvailable && projectMAdaptiveRenderScale_ < 0.999f;
+        const uint32_t outputWidth = useUpscaler ? kProjectMOutputWidthSgsr : kProjectMOutputWidthNative;
+        const uint32_t outputHeight = useUpscaler ? kProjectMOutputHeightSgsr : kProjectMOutputHeightNative;
         const float effectiveScale = useUpscaler ? projectMAdaptiveRenderScale_ : 1.0f;
 
         const int renderWidth = std::clamp(
-            static_cast<int>(std::lround(static_cast<double>(kProjectMWidth) * effectiveScale)),
+            static_cast<int>(std::lround(static_cast<double>(outputWidth) * effectiveScale)),
             kMinProjectMRenderWidth,
-            static_cast<int>(kProjectMWidth));
+            static_cast<int>(outputWidth));
         const int renderHeight = std::clamp(
-            static_cast<int>(std::lround(static_cast<double>(kProjectMHeight) * effectiveScale)),
+            static_cast<int>(std::lround(static_cast<double>(outputHeight) * effectiveScale)),
             kMinProjectMRenderHeight,
-            static_cast<int>(kProjectMHeight));
+            static_cast<int>(outputHeight));
 
         const bool unchanged =
             !forceLog &&
+            projectMOutputWidth_ == outputWidth &&
+            projectMOutputHeight_ == outputHeight &&
             projectMRenderWidth_ == renderWidth &&
             projectMRenderHeight_ == renderHeight &&
             projectMUseUpscaler_ == useUpscaler &&
@@ -2515,7 +2590,7 @@ private:
 
         DestroyProjectMRenderTargets();
 
-        if (!CreateColorTexture(projectMTexture_, static_cast<int>(kProjectMWidth), static_cast<int>(kProjectMHeight))) {
+        if (!CreateColorTexture(projectMTexture_, static_cast<int>(outputWidth), static_cast<int>(outputHeight))) {
             return false;
         }
 
@@ -2540,6 +2615,8 @@ private:
         }
 
         projectMUseUpscaler_ = useUpscaler;
+        projectMOutputWidth_ = outputWidth;
+        projectMOutputHeight_ = outputHeight;
         projectMRenderWidth_ = renderWidth;
         projectMRenderHeight_ = renderHeight;
 
@@ -2557,8 +2634,8 @@ private:
              effectiveScale,
              projectMRenderWidth_,
              projectMRenderHeight_,
-             static_cast<unsigned>(kProjectMWidth),
-             static_cast<unsigned>(kProjectMHeight));
+             static_cast<unsigned>(projectMOutputWidth_),
+             static_cast<unsigned>(projectMOutputHeight_));
         return true;
     }
 
@@ -2569,7 +2646,7 @@ private:
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, projectMUpscaleFbo_);
-        glViewport(0, 0, static_cast<GLsizei>(kProjectMWidth), static_cast<GLsizei>(kProjectMHeight));
+        glViewport(0, 0, static_cast<GLsizei>(projectMOutputWidth_), static_cast<GLsizei>(projectMOutputHeight_));
         glDisable(GL_BLEND);
         glUseProgram(sgsrProgram_);
         glUniform4f(sgsrViewportInfoLoc_,
@@ -2588,7 +2665,10 @@ private:
     }
 
     float EffectiveProjectMRenderScale() const {
-        return static_cast<float>(projectMRenderWidth_) / static_cast<float>(kProjectMWidth);
+        if (projectMOutputWidth_ == 0) {
+            return 1.0f;
+        }
+        return static_cast<float>(projectMRenderWidth_) / static_cast<float>(projectMOutputWidth_);
     }
 
     bool IsPresetMarkedSlow(const std::string& presetPath) const {
@@ -2605,7 +2685,73 @@ private:
         return false;
     }
 
-    bool FindPresetIndexRelative(int delta, bool skipMarked, size_t& outIndex) const {
+    bool IsPresetFavorited(const std::string& presetPath) const {
+        if (presetPath.empty()) {
+            return false;
+        }
+
+        const std::string basename = BasenamePath(presetPath);
+        for (const std::string& entry : favoritePresets_) {
+            if (entry == presetPath || entry == basename) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool IsCurrentPresetFavorited() const {
+        if (presetFiles_.empty() || currentPresetIndex_ >= presetFiles_.size()) {
+            return false;
+        }
+        return IsPresetFavorited(presetFiles_[currentPresetIndex_]);
+    }
+
+    static size_t SelectablePresetCountCacheIndex(bool skipMarked, bool favoritesOnly) {
+        return (skipMarked ? 0x2u : 0x0u) | (favoritesOnly ? 0x1u : 0x0u);
+    }
+
+    void InvalidateSelectablePresetCountCache() {
+        selectablePresetCountCacheValid_.fill(false);
+    }
+
+    size_t GetSelectablePresetCountCached(bool skipMarked, bool favoritesOnly) const {
+        const size_t cacheIndex = SelectablePresetCountCacheIndex(skipMarked, favoritesOnly);
+        if (cacheIndex >= selectablePresetCountCache_.size()) {
+            return CountSelectablePresets(skipMarked, favoritesOnly);
+        }
+
+        if (!selectablePresetCountCacheValid_[cacheIndex]) {
+            selectablePresetCountCache_[cacheIndex] = CountSelectablePresets(skipMarked, favoritesOnly);
+            selectablePresetCountCacheValid_[cacheIndex] = true;
+        }
+        return selectablePresetCountCache_[cacheIndex];
+    }
+
+    bool HasAnyFavoritedPresetsInLibrary() const {
+        return GetSelectablePresetCountCached(false, true) > 0;
+    }
+
+    bool IsPresetSelectable(const std::string& presetPath, bool skipMarked, bool favoritesOnly) const {
+        if (favoritesOnly && !IsPresetFavorited(presetPath)) {
+            return false;
+        }
+        if (skipMarked && IsPresetMarkedSlow(presetPath)) {
+            return false;
+        }
+        return true;
+    }
+
+    size_t CountSelectablePresets(bool skipMarked, bool favoritesOnly) const {
+        size_t count = 0;
+        for (const std::string& presetPath : presetFiles_) {
+            if (IsPresetSelectable(presetPath, skipMarked, favoritesOnly)) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    bool FindPresetIndexRelative(int delta, bool skipMarked, bool favoritesOnly, size_t& outIndex) const {
         if (presetFiles_.empty()) {
             return false;
         }
@@ -2627,7 +2773,7 @@ private:
             }
 
             const size_t candidate = static_cast<size_t>(index);
-            if (skipMarked && IsPresetMarkedSlow(presetFiles_[candidate])) {
+            if (!IsPresetSelectable(presetFiles_[candidate], skipMarked, favoritesOnly)) {
                 continue;
             }
 
@@ -2654,8 +2800,29 @@ private:
         }
     }
 
+    void PersistFavoritePresetList() const {
+        if (favoritePresetFilePath_.empty()) {
+            return;
+        }
+
+        std::ofstream out(favoritePresetFilePath_, std::ios::trunc);
+        if (!out) {
+            LOGW("Could not write favorite preset list: %s", favoritePresetFilePath_.c_str());
+            return;
+        }
+
+        for (const std::string& path : favoritePresets_) {
+            out << path << '\n';
+        }
+    }
+
     void LoadSlowPresetList() {
         slowPresets_.clear();
+        InvalidateSelectablePresetCountCache();
+        slowPresetFailureCounts_.clear();
+        slowPresetRetryEligibleAfterSeconds_.clear();
+        slowPresetRetryWarmupUntilSeconds_.clear();
+        nextSlowPresetRetryProbeSeconds_ = 0.0;
         if (slowPresetFilePath_.empty()) {
             return;
         }
@@ -2673,6 +2840,10 @@ private:
             }
             if (std::find(slowPresets_.begin(), slowPresets_.end(), line) == slowPresets_.end()) {
                 slowPresets_.push_back(line);
+                const std::string key = PresetHistoryKey(line);
+                slowPresetFailureCounts_[key] = std::max(1, slowPresetFailureCounts_[key]);
+                slowPresetRetryEligibleAfterSeconds_[key] =
+                    std::max(slowPresetRetryEligibleAfterSeconds_[key], perfSlowPresetRetryCooldownSeconds_);
             }
         }
 
@@ -2681,25 +2852,189 @@ private:
         }
     }
 
-    void ClearSlowPresetMarks() {
-        slowPresets_.clear();
-        PersistSlowPresetList();
-        LOGI("Cleared marked slow presets.");
+    void LoadFavoritePresetList() {
+        favoritePresets_.clear();
+        InvalidateSelectablePresetCountCache();
+        if (favoritePresetFilePath_.empty()) {
+            return;
+        }
+
+        std::ifstream in(favoritePresetFilePath_);
+        if (!in) {
+            return;
+        }
+
+        std::string line;
+        while (std::getline(in, line)) {
+            line = TrimAscii(line);
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+            if (std::find(favoritePresets_.begin(), favoritePresets_.end(), line) == favoritePresets_.end()) {
+                favoritePresets_.push_back(line);
+            }
+        }
+
+        if (!favoritePresets_.empty()) {
+            LOGI("Loaded %zu favorited presets.", favoritePresets_.size());
+        }
     }
 
-    void MarkCurrentPresetSlow() {
+    bool ToggleCurrentPresetFavorite() {
+        if (presetFiles_.empty() || currentPresetIndex_ >= presetFiles_.size()) {
+            return false;
+        }
+
+        const std::string& presetPath = presetFiles_[currentPresetIndex_];
+        const std::string presetBasename = BasenamePath(presetPath);
+        const bool currentlyFavorited = IsPresetFavorited(presetPath);
+        if (currentlyFavorited) {
+            favoritePresets_.erase(
+                std::remove_if(favoritePresets_.begin(),
+                               favoritePresets_.end(),
+                               [&](const std::string& entry) {
+                                   return entry == presetPath || entry == presetBasename;
+                               }),
+                favoritePresets_.end());
+            PersistFavoritePresetList();
+            LOGI("Removed preset from favorites: %s", presetPath.c_str());
+        } else {
+            favoritePresets_.push_back(presetPath);
+            PersistFavoritePresetList();
+            LOGI("Marked preset as favorite: %s", presetPath.c_str());
+        }
+        InvalidateSelectablePresetCountCache();
+
+        if (favoritesOnlyMode_) {
+            if (!HasAnyFavoritedPresetsInLibrary()) {
+                favoritesOnlyMode_ = false;
+                LOGI("Disabled favorites-only filter: no favorites remain.");
+            } else if (!IsCurrentPresetFavorited()) {
+                SwitchPresetRelative(+1, true);
+            }
+        }
+
+        hudTextDirty_ = true;
+        return !currentlyFavorited;
+    }
+
+    FavoritesOnlyFilterToggleResult ToggleFavoritesOnlyFilter() {
+        if (favoritesOnlyMode_) {
+            favoritesOnlyMode_ = false;
+            hudTextDirty_ = true;
+            return FavoritesOnlyFilterToggleResult::Disabled;
+        }
+
+        if (!HasAnyFavoritedPresetsInLibrary()) {
+            hudTextDirty_ = true;
+            return FavoritesOnlyFilterToggleResult::NoFavorites;
+        }
+
+        favoritesOnlyMode_ = true;
+        if (!IsCurrentPresetFavorited()) {
+            SwitchPresetRelative(+1, true);
+        }
+        hudTextDirty_ = true;
+        return FavoritesOnlyFilterToggleResult::Enabled;
+    }
+
+    bool TogglePresetLock() {
+        lockCurrentPreset_ = !lockCurrentPreset_;
+        lowFpsSinceSeconds_ = -1.0;
+        hudTextDirty_ = true;
+        return lockCurrentPreset_;
+    }
+
+    bool ToggleUtilityPanel() {
+        hudUtilityPanelOpen_ = !hudUtilityPanelOpen_;
+        hudTextDirty_ = true;
+        return hudUtilityPanelOpen_;
+    }
+
+    std::string PresetHistoryKey(const std::string& presetPath) const {
+        const std::string basename = BasenamePath(presetPath);
+        return basename.empty() ? presetPath : basename;
+    }
+
+    int SlowPresetFailureCount(const std::string& presetPath) const {
+        const std::string key = PresetHistoryKey(presetPath);
+        const auto it = slowPresetFailureCounts_.find(key);
+        if (it == slowPresetFailureCounts_.end()) {
+            return 0;
+        }
+        return std::max(0, it->second);
+    }
+
+    void MaybeReleaseOneSlowPresetForRetry(double nowSeconds) {
+        if (slowPresets_.empty() || nowSeconds < nextSlowPresetRetryProbeSeconds_) {
+            return;
+        }
+
+        for (size_t i = 0; i < slowPresets_.size(); ++i) {
+            const std::string key = PresetHistoryKey(slowPresets_[i]);
+            auto eligibleIt = slowPresetRetryEligibleAfterSeconds_.find(key);
+            if (eligibleIt == slowPresetRetryEligibleAfterSeconds_.end()) {
+                slowPresetRetryEligibleAfterSeconds_[key] = nowSeconds + perfSlowPresetRetryCooldownSeconds_;
+                continue;
+            }
+            if (nowSeconds < eligibleIt->second) {
+                continue;
+            }
+
+            const std::string releasedPreset = slowPresets_[i];
+            slowPresets_.erase(slowPresets_.begin() + i);
+            PersistSlowPresetList();
+            InvalidateSelectablePresetCountCache();
+            slowPresetRetryWarmupUntilSeconds_[key] = nowSeconds + perfSlowPresetRetryWarmupSeconds_;
+            nextSlowPresetRetryProbeSeconds_ = nowSeconds + perfSlowPresetRetryProbeIntervalSeconds_;
+            LOGI("Re-trying previously slow preset after cooldown: %s", releasedPreset.c_str());
+            SetHudInputFeedback(nowSeconds, "RETRY SLOW PRESET");
+            ExtendHudVisibility(nowSeconds, kHudVisibleAfterStatusChangeSeconds);
+            return;
+        }
+
+        nextSlowPresetRetryProbeSeconds_ = nowSeconds + std::min(10.0, perfSlowPresetRetryProbeIntervalSeconds_);
+    }
+
+    void MarkCurrentPresetSlow(double nowSeconds, const std::string& reasonLabel = std::string()) {
         if (presetFiles_.empty() || currentPresetIndex_ >= presetFiles_.size()) {
             return;
         }
 
         const std::string& presetPath = presetFiles_[currentPresetIndex_];
+        const std::string key = PresetHistoryKey(presetPath);
+        const int nextFailures = SlowPresetFailureCount(presetPath) + 1;
+        slowPresetFailureCounts_[key] = nextFailures;
+        slowPresetRetryWarmupUntilSeconds_.erase(key);
+
+        const double retryCooldownScale = std::clamp(1.0 + 0.35 * static_cast<double>(nextFailures - 1), 1.0, 2.5);
+        slowPresetRetryEligibleAfterSeconds_[key] =
+            nowSeconds + perfSlowPresetRetryCooldownSeconds_ * retryCooldownScale;
+
         if (IsPresetMarkedSlow(presetPath)) {
             return;
         }
 
         slowPresets_.push_back(presetPath);
         PersistSlowPresetList();
-        LOGW("Marked preset as slow: %s", presetPath.c_str());
+        InvalidateSelectablePresetCountCache();
+        if (reasonLabel.empty()) {
+            LOGW("Marked preset as slow: %s", presetPath.c_str());
+        } else {
+            LOGW("Marked preset as slow (%s): %s", reasonLabel.c_str(), presetPath.c_str());
+        }
+    }
+
+    void ClearSlowPresetMarks() {
+        slowPresets_.clear();
+        PersistSlowPresetList();
+        InvalidateSelectablePresetCountCache();
+        slowPresetFailureCounts_.clear();
+        slowPresetRetryEligibleAfterSeconds_.clear();
+        slowPresetRetryWarmupUntilSeconds_.clear();
+        lowFpsSinceSeconds_ = -1.0;
+        nextSlowPresetRetryProbeSeconds_ = 0.0;
+        LOGI("Cleared marked slow presets.");
     }
 
     uint32_t TargetAudioFramesForRender(float deltaSeconds) const {
@@ -2827,6 +3162,7 @@ private:
         }
 
         presetFiles_ = scanned;
+        InvalidateSelectablePresetCountCache();
         if (!currentPresetPath.empty()) {
             const auto it = std::find(presetFiles_.begin(), presetFiles_.end(), currentPresetPath);
             currentPresetIndex_ = it == presetFiles_.end()
@@ -2836,13 +3172,24 @@ private:
             currentPresetIndex_ = 0;
         }
 
-        if (skipMarkedPresets_ &&
+        if (favoritesOnlyMode_ && !HasAnyFavoritedPresetsInLibrary()) {
+            favoritesOnlyMode_ = false;
+            hudTextDirty_ = true;
+            LOGI("Disabled favorites-only filter: no favorites found in current preset list.");
+        }
+
+        const bool favoritesOnly = favoritesOnlyMode_ && HasAnyFavoritedPresetsInLibrary();
+        if (!lockCurrentPreset_ &&
             !presetFiles_.empty() &&
-            currentPresetIndex_ < presetFiles_.size() &&
-            IsPresetMarkedSlow(presetFiles_[currentPresetIndex_])) {
-            size_t nextUnmarked = currentPresetIndex_;
-            if (FindPresetIndexRelative(1, true, nextUnmarked)) {
-                currentPresetIndex_ = nextUnmarked;
+            currentPresetIndex_ < presetFiles_.size()) {
+            const bool currentSlow = skipMarkedPresets_ && IsPresetMarkedSlow(presetFiles_[currentPresetIndex_]);
+            const bool currentNotFavorited = favoritesOnly && !IsPresetFavorited(presetFiles_[currentPresetIndex_]);
+            if (currentSlow || currentNotFavorited) {
+                size_t nextCandidate = currentPresetIndex_;
+                if (FindPresetIndexRelative(1, true, favoritesOnly, nextCandidate) ||
+                    FindPresetIndexRelative(1, false, favoritesOnly, nextCandidate)) {
+                    currentPresetIndex_ = nextCandidate;
+                }
             }
         }
 
@@ -2869,10 +3216,17 @@ private:
             return;
         }
 
+        if (favoritesOnlyMode_ && !HasAnyFavoritedPresetsInLibrary()) {
+            favoritesOnlyMode_ = false;
+            hudTextDirty_ = true;
+            LOGI("Disabled favorites-only filter: no favorites available for switching.");
+        }
+
         size_t nextIndex = currentPresetIndex_;
+        const bool favoritesOnly = favoritesOnlyMode_ && HasAnyFavoritedPresetsInLibrary();
         const bool preferUnmarked = skipMarkedPresets_;
-        if (!FindPresetIndexRelative(delta, preferUnmarked, nextIndex)) {
-            if (!FindPresetIndexRelative(delta, false, nextIndex)) {
+        if (!FindPresetIndexRelative(delta, preferUnmarked, favoritesOnly, nextIndex)) {
+            if (!FindPresetIndexRelative(delta, false, favoritesOnly, nextIndex)) {
                 return;
             }
         }
@@ -2888,7 +3242,7 @@ private:
         std::string name = StripExtension(BasenamePath(presetPath));
         ReplaceAll(name, "__", " - ");
         ReplaceAll(name, "_", " ");
-        return SanitizeHudText(name, 56);
+        return SanitizeHudText(name, kMaxPresetHudLabelChars);
     }
 
     std::string BuildTrackDisplayLabel(const std::string& rawLabel) const {
@@ -2965,22 +3319,59 @@ private:
                           "SGSR ON  %dx%d -> %ux%u  SCALE %.2f  FPS %.0f",
                           projectMRenderWidth_,
                           projectMRenderHeight_,
-                          static_cast<unsigned>(kProjectMWidth),
-                          static_cast<unsigned>(kProjectMHeight),
+                          static_cast<unsigned>(projectMOutputWidth_),
+                          static_cast<unsigned>(projectMOutputHeight_),
                           EffectiveProjectMRenderScale(),
                           std::round(smoothedFps));
         } else {
             std::snprintf(text,
                           sizeof(text),
                           "SGSR OFF  NATIVE %ux%u  FPS %.0f",
-                          static_cast<unsigned>(kProjectMWidth),
-                          static_cast<unsigned>(kProjectMHeight),
+                          static_cast<unsigned>(projectMOutputWidth_),
+                          static_cast<unsigned>(projectMOutputHeight_),
                           std::round(smoothedFps));
         }
         return SanitizeHudText(text, 72);
     }
 
-    void RefreshHudTextTextureIfNeeded() {
+    std::string BuildPresetHudLineLabel(const std::string& presetLabel, double nowSeconds) const {
+        const std::string prefix = "PRESET ";
+        if (presetLabel.empty()) {
+            return prefix + "NONE";
+        }
+
+        const float minU = 0.05f;
+        const float maxU = 0.95f;
+        const int scale = kHudDetailScale;
+
+        const int rectMinX = static_cast<int>(minU * static_cast<float>(kHudTextTextureWidth));
+        const int rectMaxX = static_cast<int>(maxU * static_cast<float>(kHudTextTextureWidth));
+        const int rectWidth = std::max(0, rectMaxX - rectMinX);
+        const int horizontalPadding = std::max(2, scale);
+        const int usableWidth = std::max(0, rectWidth - horizontalPadding * 2);
+
+        const int prefixWidth = MeasureHudTextWidth(prefix, scale);
+        const int labelWidthBudget = usableWidth - prefixWidth;
+        if (labelWidthBudget <= 0) {
+            return FitHudTextToWidth(prefix, scale, usableWidth);
+        }
+
+        if (MeasureHudTextWidth(presetLabel, scale) <= labelWidthBudget) {
+            return prefix + presetLabel;
+        }
+
+        const int visibleChars = MaxHudTextCharsForWidth(scale, labelWidthBudget);
+        if (visibleChars <= 0) {
+            return FitHudTextToWidth(prefix, scale, usableWidth);
+        }
+
+        return prefix + BuildHudMarqueeText(presetLabel,
+                                            visibleChars,
+                                            nowSeconds,
+                                            presetMarqueeStartSeconds_);
+    }
+
+    void RefreshHudTextTextureIfNeeded(double nowSeconds) {
         if (hudTextTexture_ == 0) {
             return;
         }
@@ -2989,20 +3380,39 @@ private:
         const std::string projectionLabel =
             projectionMode_ == ProjectionMode::FrontDome ? "DOME" : "SPHERE";
         const std::string playbackLabel = currentMediaPlaying_ ? "PLAYING" : "PAUSED";
-        const std::string presetLabel = SanitizeHudText(currentPresetLabel_, 56);
+        const std::string presetLabel = SanitizeHudText(currentPresetLabel_, kMaxPresetHudLabelChars);
+        if (presetLabel != hudPresetSourceLabel_) {
+            hudPresetSourceLabel_ = presetLabel;
+            presetMarqueeStartSeconds_ = nowSeconds;
+        }
+        const std::string presetLineLabel = BuildPresetHudLineLabel(hudPresetSourceLabel_, nowSeconds);
         const std::string trackLabel = BuildTrackDisplayLabel(currentMediaLabel_);
+        const std::string favoriteLabel = IsCurrentPresetFavorited() ? "STAR PRESET ON" : "STAR PRESET OFF";
+        const std::string presetLockLabel = lockCurrentPreset_ ? "LOCK PRESET ON" : "LOCK PRESET OFF";
+        const std::string bottomLeftLabel = hudUtilityPanelOpen_ ? "PACK" : "UTILS";
+        const std::string bottomCenterLabel = hudUtilityPanelOpen_
+            ? (favoritesOnlyMode_ ? "SHOW FAVS ON" : "SHOW FAVS OFF")
+            : "AUDIO MODE";
+        const std::string bottomRightLabel = hudUtilityPanelOpen_ ? "BACK" : "PROJECTION";
+        const std::string infoLabel = nowSeconds <= hudInputFeedbackUntilSeconds_
+            ? SanitizeHudText(hudInputFeedbackLabel_, 56)
+            : ("TRACK: " + trackLabel);
         const std::string renderStatsLabel = BuildRenderStatsHudLabel();
-        const std::string centerInfoLabel = "TRACK: " + trackLabel;
 
         const bool changed =
             hudTextDirty_ ||
             hudRenderedAudioLabel_ != audioLabel ||
             hudRenderedProjectionLabel_ != projectionLabel ||
             hudRenderedPlaybackLabel_ != playbackLabel ||
-            hudRenderedPresetLabel_ != presetLabel ||
+            hudRenderedPresetLabel_ != presetLineLabel ||
+            hudRenderedFavoriteLabel_ != favoriteLabel ||
+            hudRenderedPresetLockLabel_ != presetLockLabel ||
+            hudRenderedBottomLeftLabel_ != bottomLeftLabel ||
+            hudRenderedBottomCenterLabel_ != bottomCenterLabel ||
+            hudRenderedBottomRightLabel_ != bottomRightLabel ||
             hudRenderedRenderStatsLabel_ != renderStatsLabel ||
             hudRenderedTrackLabel_ != trackLabel ||
-            hudRenderedInputFeedbackLabel_ != centerInfoLabel;
+            hudRenderedInputFeedbackLabel_ != infoLabel;
 
         if (!changed) {
             return;
@@ -3011,28 +3421,34 @@ private:
         hudRenderedAudioLabel_ = audioLabel;
         hudRenderedProjectionLabel_ = projectionLabel;
         hudRenderedPlaybackLabel_ = playbackLabel;
-        hudRenderedPresetLabel_ = presetLabel;
+        hudRenderedPresetLabel_ = presetLineLabel;
+        hudRenderedFavoriteLabel_ = favoriteLabel;
+        hudRenderedPresetLockLabel_ = presetLockLabel;
+        hudRenderedBottomLeftLabel_ = bottomLeftLabel;
+        hudRenderedBottomCenterLabel_ = bottomCenterLabel;
+        hudRenderedBottomRightLabel_ = bottomRightLabel;
         hudRenderedRenderStatsLabel_ = renderStatsLabel;
         hudRenderedTrackLabel_ = trackLabel;
-        hudRenderedInputFeedbackLabel_ = centerInfoLabel;
+        hudRenderedInputFeedbackLabel_ = infoLabel;
         hudTextDirty_ = false;
 
         std::fill(hudTextPixels_.begin(), hudTextPixels_.end(), 0);
         DrawHudTextCentered(0.05f, 0.34f, 0.885f, 0.93f, "AUD " + hudRenderedAudioLabel_, kHudStatusScale);
         DrawHudTextCentered(0.36f, 0.64f, 0.885f, 0.93f, "PROJ " + hudRenderedProjectionLabel_, kHudStatusScale);
         DrawHudTextCentered(0.66f, 0.95f, 0.885f, 0.93f, "PLAY " + hudRenderedPlaybackLabel_, kHudStatusScale);
-        DrawHudTextCentered(0.05f, 0.95f, 0.835f, 0.875f, "PRESET " + hudRenderedPresetLabel_, kHudDetailScale);
+        DrawHudTextCentered(0.05f, 0.95f, 0.835f, 0.875f, hudRenderedPresetLabel_, kHudDetailScale);
         DrawHudTextCentered(0.05f, 0.95f, 0.785f, 0.825f, hudRenderedRenderStatsLabel_, kHudDetailScale, 210);
 
         DrawHudTextCentered(kHudRectPrevPreset.minU, kHudRectPrevPreset.maxU, kHudRectPrevPreset.minV, kHudRectPrevPreset.maxV, "PREV PRESET", kHudActionScale);
         DrawHudTextCentered(kHudRectNextPreset.minU, kHudRectNextPreset.maxU, kHudRectNextPreset.minV, kHudRectNextPreset.maxV, "NEXT PRESET", kHudActionScale);
         DrawHudTextCentered(kHudRectTogglePlay.minU, kHudRectTogglePlay.maxU, kHudRectTogglePlay.minV, kHudRectTogglePlay.maxV, "PLAY PAUSE", kHudActionScale);
         DrawHudTextCentered(kHudRectNextTrack.minU, kHudRectNextTrack.maxU, kHudRectNextTrack.minV, kHudRectNextTrack.maxV, "NEXT TRACK", kHudActionScale);
-        DrawHudTextCentered(0.07f, 0.93f, 0.535f, 0.585f, hudRenderedInputFeedbackLabel_, kHudInputScale, 170);
-        DrawHudTextCentered(0.07f, 0.93f, 0.245f, 0.295f, "DIRECT HAND TOUCH", kHudInputScale, 190);
-        DrawHudTextCentered(kHudRectPack.minU, kHudRectPack.maxU, kHudRectPack.minV, kHudRectPack.maxV, "PACK", kHudTriggerScale);
-        DrawHudTextCentered(kHudRectCenter.minU, kHudRectCenter.maxU, kHudRectCenter.minV, kHudRectCenter.maxV, "AUDIO MODE", kHudTriggerScale);
-        DrawHudTextCentered(kHudRectProjection.minU, kHudRectProjection.maxU, kHudRectProjection.minV, kHudRectProjection.maxV, "PROJECTION", kHudTriggerScale);
+        DrawHudTextCentered(kHudRectFavorite.minU, kHudRectFavorite.maxU, kHudRectFavorite.minV, kHudRectFavorite.maxV, hudRenderedFavoriteLabel_, kHudInputScale, 170);
+        DrawHudTextCentered(kHudRectPresetLock.minU, kHudRectPresetLock.maxU, kHudRectPresetLock.minV, kHudRectPresetLock.maxV, hudRenderedPresetLockLabel_, kHudInputScale, 170);
+        DrawHudTextCentered(0.07f, 0.93f, 0.245f, 0.295f, hudRenderedInputFeedbackLabel_, kHudInputScale, 190);
+        DrawHudTextCentered(kHudRectPack.minU, kHudRectPack.maxU, kHudRectPack.minV, kHudRectPack.maxV, hudRenderedBottomLeftLabel_, kHudTriggerScale);
+        DrawHudTextCentered(kHudRectCenter.minU, kHudRectCenter.maxU, kHudRectCenter.minV, kHudRectCenter.maxV, hudRenderedBottomCenterLabel_, kHudTriggerScale);
+        DrawHudTextCentered(kHudRectProjection.minU, kHudRectProjection.maxU, kHudRectProjection.minV, kHudRectProjection.maxV, hudRenderedBottomRightLabel_, kHudTriggerScale);
 
         glBindTexture(GL_TEXTURE_2D, hudTextTexture_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -3376,14 +3792,20 @@ private:
         if (UvInRect(uv, kHudRectNextTrack)) {
             return HudButtonId::NextTrack;
         }
+        if (UvInRect(uv, kHudRectFavorite)) {
+            return HudButtonId::ToggleFavorite;
+        }
+        if (UvInRect(uv, kHudRectPresetLock)) {
+            return HudButtonId::TogglePresetLock;
+        }
         if (UvInRect(uv, kHudRectPack)) {
-            return HudButtonId::OptionalPack;
+            return hudUtilityPanelOpen_ ? HudButtonId::OptionalPack : HudButtonId::ToggleUtilityPanel;
         }
         if (UvInRect(uv, kHudRectCenter)) {
-            return HudButtonId::CycleAudio;
+            return hudUtilityPanelOpen_ ? HudButtonId::ToggleFavoritesOnly : HudButtonId::CycleAudio;
         }
         if (UvInRect(uv, kHudRectProjection)) {
-            return HudButtonId::ToggleProjection;
+            return hudUtilityPanelOpen_ ? HudButtonId::ToggleUtilityPanel : HudButtonId::ToggleProjection;
         }
         return HudButtonId::None;
     }
@@ -3414,12 +3836,52 @@ private:
                 SetHudInputFeedback(nowSeconds, "UI NEXT TRACK");
                 break;
 
+            case HudButtonId::ToggleFavorite: {
+                const bool favorited = ToggleCurrentPresetFavorite();
+                hudFlashMenu_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, favorited ? "UI STAR PRESET ON" : "UI STAR PRESET OFF");
+                break;
+            }
+
+            case HudButtonId::TogglePresetLock: {
+                const bool locked = TogglePresetLock();
+                hudFlashMenu_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, locked ? "UI LOCK PRESET ON" : "UI LOCK PRESET OFF");
+                break;
+            }
+
+            case HudButtonId::ToggleUtilityPanel: {
+                const bool open = ToggleUtilityPanel();
+                hudFlashMenu_ = kHudFlashPeak;
+                SetHudInputFeedback(nowSeconds, open ? "UI UTILS OPEN" : "UI UTILS CLOSED");
+                break;
+            }
+
             case HudButtonId::OptionalPack:
                 CallJavaControlMethod("onNativeRequestOptionalCreamPack");
                 lastPresetScanSeconds_ = nowSeconds - kPresetScanIntervalSeconds;
+                hudUtilityPanelOpen_ = false;
+                hudTextDirty_ = true;
                 hudFlashLt_ = kHudFlashPeak;
                 SetHudInputFeedback(nowSeconds, "UI REQUEST PACK");
                 break;
+
+            case HudButtonId::ToggleFavoritesOnly: {
+                const FavoritesOnlyFilterToggleResult result = ToggleFavoritesOnlyFilter();
+                hudFlashMenu_ = kHudFlashPeak;
+                switch (result) {
+                    case FavoritesOnlyFilterToggleResult::Enabled:
+                        SetHudInputFeedback(nowSeconds, "UI SHOW FAVORITES ON");
+                        break;
+                    case FavoritesOnlyFilterToggleResult::Disabled:
+                        SetHudInputFeedback(nowSeconds, "UI SHOW FAVORITES OFF");
+                        break;
+                    case FavoritesOnlyFilterToggleResult::NoFavorites:
+                        SetHudInputFeedback(nowSeconds, "UI NO FAVORITES SAVED");
+                        break;
+                }
+                break;
+            }
 
             case HudButtonId::CycleAudio:
                 CallJavaControlMethod("onNativeCycleAudioInput");
@@ -3673,6 +4135,30 @@ private:
                                                                 static_cast<float>(kDefaultPerfAutoSkipCooldownSeconds)),
                                               1.0f,
                                               60.0f);
+        const float perfSlowRetryCooldown = std::clamp(readFloatProperty("debug.projectm.quest.perf.slow_retry_seconds",
+                                                                          static_cast<float>(kDefaultPerfSlowRetryCooldownSeconds)),
+                                                       10.0f,
+                                                       1800.0f);
+        const float perfSlowRetryProbeInterval =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.slow_retry.probe_seconds",
+                                         static_cast<float>(kDefaultPerfSlowRetryProbeIntervalSeconds)),
+                       5.0f,
+                       600.0f);
+        const float perfSlowRetryWarmup =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.slow_retry.warmup_seconds",
+                                         static_cast<float>(kDefaultPerfSlowRetryWarmupSeconds)),
+                       2.0f,
+                       60.0f);
+        const float perfRepeatSlowHoldScale =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.repeat_slow.hold_scale",
+                                         static_cast<float>(kDefaultPerfRepeatSlowSkipHoldScale)),
+                       0.20f,
+                       1.0f);
+        const float perfRepeatSlowMinHold =
+            std::clamp(readFloatProperty("debug.projectm.quest.perf.repeat_slow.min_hold_seconds",
+                                         static_cast<float>(kDefaultPerfRepeatSlowSkipMinHoldSeconds)),
+                       0.2f,
+                       8.0f);
 
         const float newHudWidth = kHudWidth * hudScale;
         const float newHudHeight = kHudHeight * hudScale;
@@ -3722,6 +4208,11 @@ private:
         perfAutoScaleUpFps_ = std::clamp(std::max(perfAutoScaleUpFps, perfAutoScaleDownFps_ + 0.5f), 20.0f, 90.0f);
         perfAutoScaleHoldSeconds_ = static_cast<double>(perfAutoScaleHold);
         perfAutoScaleCooldownSeconds_ = static_cast<double>(perfAutoScaleCooldown);
+        perfSlowPresetRetryCooldownSeconds_ = static_cast<double>(perfSlowRetryCooldown);
+        perfSlowPresetRetryProbeIntervalSeconds_ = static_cast<double>(perfSlowRetryProbeInterval);
+        perfSlowPresetRetryWarmupSeconds_ = static_cast<double>(perfSlowRetryWarmup);
+        perfRepeatSlowSkipHoldScale_ = static_cast<double>(perfRepeatSlowHoldScale);
+        perfRepeatSlowSkipMinHoldSeconds_ = static_cast<double>(perfRepeatSlowMinHold);
 
         bool renderConfigChanged = false;
         if (sgsrEnabled_ != sgsrEnabled) {
@@ -3814,8 +4305,8 @@ private:
                  EffectiveProjectMRenderScale(),
                  projectMRenderWidth_,
                  projectMRenderHeight_,
-                 static_cast<unsigned>(kProjectMWidth),
-                 static_cast<unsigned>(kProjectMHeight),
+                 static_cast<unsigned>(projectMOutputWidth_),
+                 static_cast<unsigned>(projectMOutputHeight_),
                  smoothedFps);
         }
 
@@ -3897,9 +4388,32 @@ private:
             highFpsForAutoScaleSinceSeconds_ = -1.0;
         }
 
-        if (!perfAutoSkipEnabled_ || presetFiles_.size() <= 1 || usingFallbackPreset_) {
+        MaybeReleaseOneSlowPresetForRetry(nowSeconds);
+
+        if (!perfAutoSkipEnabled_ || lockCurrentPreset_ || presetFiles_.size() <= 1 || usingFallbackPreset_) {
             lowFpsSinceSeconds_ = -1.0;
             return;
+        }
+
+        std::string currentPresetPath;
+        if (currentPresetIndex_ < presetFiles_.size()) {
+            currentPresetPath = presetFiles_[currentPresetIndex_];
+        }
+        const std::string currentPresetKey = PresetHistoryKey(currentPresetPath);
+        auto retryWarmupIt = slowPresetRetryWarmupUntilSeconds_.find(currentPresetKey);
+        if (retryWarmupIt != slowPresetRetryWarmupUntilSeconds_.end()) {
+            if (nowSeconds < retryWarmupIt->second) {
+                lowFpsSinceSeconds_ = -1.0;
+                return;
+            }
+            slowPresetRetryWarmupUntilSeconds_.erase(retryWarmupIt);
+        }
+
+        const int priorSlowFailures = SlowPresetFailureCount(currentPresetPath);
+        double effectiveAutoSkipHoldSeconds = perfAutoSkipHoldSeconds_;
+        if (priorSlowFailures > 0) {
+            effectiveAutoSkipHoldSeconds = std::max(perfRepeatSlowSkipMinHoldSeconds_,
+                                                    perfAutoSkipHoldSeconds_ * perfRepeatSlowSkipHoldScale_);
         }
 
         if (nowSeconds - lastPresetSwitchSeconds_ < kPerfGraceAfterPresetSwitchSeconds ||
@@ -3917,22 +4431,24 @@ private:
             return;
         }
 
-        if (nowSeconds - lowFpsSinceSeconds_ < perfAutoSkipHoldSeconds_) {
+        if (nowSeconds - lowFpsSinceSeconds_ < effectiveAutoSkipHoldSeconds) {
             return;
         }
 
         const std::string slowPresetLabel = currentPresetLabel_;
-        MarkCurrentPresetSlow();
+        MarkCurrentPresetSlow(nowSeconds, priorSlowFailures > 0 ? "repeat-offender" : "auto-skip");
         lastAutoSkipSeconds_ = nowSeconds;
         lowFpsSinceSeconds_ = -1.0;
 
         SetHudInputFeedback(nowSeconds, "AUTO-SKIP SLOW PRESET");
         ExtendHudVisibility(nowSeconds, kHudVisibleAfterInteractionSeconds);
         SwitchPresetRelative(+1, true);
-        LOGW("Auto-skipped slow preset %s (smoothed FPS %.1f < %.1f)",
+        LOGW("Auto-skipped slow preset %s (smoothed FPS %.1f < %.1f hold %.2fs repeats=%d)",
              slowPresetLabel.c_str(),
              smoothedFps,
-             static_cast<double>(perfAutoSkipMinFps_));
+             static_cast<double>(perfAutoSkipMinFps_),
+             effectiveAutoSkipHoldSeconds,
+             priorSlowFailures);
     }
 
     void PollInputActions(double nowSeconds, XrTime displayTime, const XrPosef& headPose) {
@@ -4110,7 +4626,7 @@ private:
         glDisable(GL_DEPTH_TEST);
 
         glUseProgram(hudProgram_);
-        RefreshHudTextTextureIfNeeded();
+        RefreshHudTextTextureIfNeeded(nowSeconds);
         glUniformMatrix4fv(hudMvpLoc_, 1, GL_FALSE, glm::value_ptr(mvp));
         glUniform4f(hudFlashALoc_, hudFlashA_, 0.0f, 0.0f, 0.0f);
         glUniform4f(hudFlashBLoc_, hudFlashB_, 0.0f, 0.0f, 0.0f);
@@ -4162,7 +4678,15 @@ private:
 
         RefreshPresetListIfNeeded(nowSeconds);
 
-        if (presetFiles_.size() > 1 && nowSeconds - lastPresetSwitchSeconds_ > kPresetSwitchSeconds) {
+        const bool favoritesOnly = favoritesOnlyMode_ && HasAnyFavoritedPresetsInLibrary();
+        size_t selectablePresetCount = GetSelectablePresetCountCached(skipMarkedPresets_, favoritesOnly);
+        if (selectablePresetCount == 0 && skipMarkedPresets_) {
+            selectablePresetCount = GetSelectablePresetCountCached(false, favoritesOnly);
+        }
+
+        if (!lockCurrentPreset_ &&
+            selectablePresetCount > 1 &&
+            nowSeconds - lastPresetSwitchSeconds_ > kPresetSwitchSeconds) {
             SwitchPresetRelative(+1, true);
         }
 
@@ -4227,6 +4751,8 @@ private:
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
                     ResetHudPointerAndTouchState();
+                    hudUtilityPanelOpen_ = false;
+                    hudTextDirty_ = true;
                     hudHandTrackingActive_ = false;
                     ResetHandModeDebounce();
                     ClearHandJointRenderState();
@@ -4246,6 +4772,8 @@ private:
                     rightTriggerPressed_ = false;
                     leftTriggerPressed_ = false;
                     ResetHudPointerAndTouchState();
+                    hudUtilityPanelOpen_ = false;
+                    hudTextDirty_ = true;
                     hudHandTrackingActive_ = false;
                     ResetHandModeDebounce();
                     ClearHandJointRenderState();
@@ -4672,14 +5200,18 @@ private:
     GLuint projectMLowResTexture_{0};
     GLuint projectMFbo_{0};
     GLuint projectMUpscaleFbo_{0};
-    int projectMRenderWidth_{static_cast<int>(kProjectMWidth)};
-    int projectMRenderHeight_{static_cast<int>(kProjectMHeight)};
+    uint32_t projectMOutputWidth_{kProjectMOutputWidthNative};
+    uint32_t projectMOutputHeight_{kProjectMOutputHeightNative};
+    int projectMRenderWidth_{static_cast<int>(kProjectMOutputWidthNative)};
+    int projectMRenderHeight_{static_cast<int>(kProjectMOutputHeightNative)};
     float projectMRenderScale_{kDefaultProjectMRenderScale};
     float projectMAdaptiveRenderScale_{kDefaultProjectMRenderScale};
     bool projectMUseUpscaler_{false};
     bool sgsrEnabled_{true};
 
     std::vector<std::string> presetFiles_;
+    mutable std::array<size_t, 4> selectablePresetCountCache_{};
+    mutable std::array<bool, 4> selectablePresetCountCacheValid_{};
     size_t currentPresetIndex_{0};
     std::string presetDirectory_;
     bool usingFallbackPreset_{false};
@@ -4692,6 +5224,12 @@ private:
     std::string hudRenderedProjectionLabel_;
     std::string hudRenderedPlaybackLabel_;
     std::string hudRenderedPresetLabel_;
+    std::string hudRenderedFavoriteLabel_;
+    std::string hudRenderedPresetLockLabel_;
+    std::string hudRenderedBottomLeftLabel_;
+    std::string hudRenderedBottomCenterLabel_;
+    std::string hudRenderedBottomRightLabel_;
+    std::string hudPresetSourceLabel_;
     std::string hudRenderedRenderStatsLabel_;
     std::string hudRenderedTrackLabel_;
     std::string hudInputFeedbackLabel_{"READY"};
@@ -4731,6 +5269,7 @@ private:
     glm::vec2 hudPointerRightUv_{0.5f, 0.5f};
     double hudVisibleUntilSeconds_{kHudVisibleOnStartSeconds};
     double hudInputFeedbackUntilSeconds_{0.0};
+    double presetMarqueeStartSeconds_{0.0};
 
     float audioCarrierPhase_{0.0f};
     float audioBeatPhase_{0.0f};
@@ -4742,6 +5281,11 @@ private:
     float perfAutoSkipMinFps_{kDefaultPerfAutoSkipMinFps};
     double perfAutoSkipHoldSeconds_{kDefaultPerfAutoSkipHoldSeconds};
     double perfAutoSkipCooldownSeconds_{kDefaultPerfAutoSkipCooldownSeconds};
+    double perfSlowPresetRetryCooldownSeconds_{kDefaultPerfSlowRetryCooldownSeconds};
+    double perfSlowPresetRetryProbeIntervalSeconds_{kDefaultPerfSlowRetryProbeIntervalSeconds};
+    double perfSlowPresetRetryWarmupSeconds_{kDefaultPerfSlowRetryWarmupSeconds};
+    double perfRepeatSlowSkipHoldScale_{kDefaultPerfRepeatSlowSkipHoldScale};
+    double perfRepeatSlowSkipMinHoldSeconds_{kDefaultPerfRepeatSlowSkipMinHoldSeconds};
     float perfAutoScaleMinRenderScale_{kDefaultPerfAutoScaleMinRenderScale};
     float perfAutoScaleStep_{kDefaultPerfAutoScaleStep};
     float perfAutoScaleDownFps_{kDefaultPerfAutoScaleDownFps};
@@ -4758,12 +5302,21 @@ private:
     double lastRuntimePropertyPollSeconds_{-1000.0};
     bool clearMarkedLatch_{false};
     std::vector<std::string> slowPresets_;
+    std::unordered_map<std::string, int> slowPresetFailureCounts_;
+    std::unordered_map<std::string, double> slowPresetRetryEligibleAfterSeconds_;
+    std::unordered_map<std::string, double> slowPresetRetryWarmupUntilSeconds_;
     std::string slowPresetFilePath_;
+    std::vector<std::string> favoritePresets_;
+    std::string favoritePresetFilePath_;
+    bool favoritesOnlyMode_{false};
+    bool lockCurrentPreset_{false};
+    bool hudUtilityPanelOpen_{false};
 
     std::chrono::steady_clock::time_point startTime_{};
     double lastFrameSeconds_{0.0};
     double lastPresetSwitchSeconds_{0.0};
     double lastPresetScanSeconds_{0.0};
+    double nextSlowPresetRetryProbeSeconds_{0.0};
     double lastExternalAudioSeconds_{-1000.0};
     double lastAudioQueueLogSeconds_{-1000.0};
     uint64_t lastAudioQueueEnqueuedFrames_{0};
