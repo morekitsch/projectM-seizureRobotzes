@@ -5,8 +5,6 @@ project(projectm_quest_openxr_native LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
-set(_project_root "${CMAKE_CURRENT_LIST_DIR}/../../../../../..")
-
 set(_openxr_roots "")
 if(DEFINED OPENXR_SDK AND NOT OPENXR_SDK STREQUAL "")
     list(APPEND _openxr_roots "${OPENXR_SDK}")
@@ -139,7 +137,7 @@ if(NOT EXISTS "${_native_app_glue_source}")
 endif()
 
 add_library(projectm_quest_openxr SHARED
-        "${_project_root}/src/quest-openxr/main.cpp"
+        main.cpp
         "${_native_app_glue_source}"
         )
 
@@ -198,7 +196,7 @@ endif()
 target_include_directories(projectm_quest_openxr
         PRIVATE
         "${_native_app_glue_include}"
-        "${_project_root}/vendor"
+        "${CMAKE_CURRENT_LIST_DIR}/third_party"
         )
 
 target_compile_definitions(projectm_quest_openxr

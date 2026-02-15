@@ -1,8 +1,8 @@
 # projectM SeizureRobotzes
 
-`projectM-seizureRobotzes` is a fork of [projectM](https://github.com/projectM-visualizer/projectm) focused on a playable Meta Quest OpenXR experience.
+`projectM-seizureRobotzes` is a standalone Meta Quest OpenXR shell app for projectM.
 
-This repo keeps the upstream `libprojectM` codebase and adds an experimental Quest host app with in-headset controls, audio input switching, and runtime tuning.
+This repo links to upstream `libprojectM-4` and provides the Quest host app layer: OpenXR loop, VR UI/input, audio routing, and runtime tuning.
 
 *Status: It works for my needs. it's a vibecoded app. Not sure how long i'll need mention that before it's vibecoding is asumed for all things, but hey ChatGPT5.3-high codex originally wrote all the stuff. I mostly complained about choices and tested. I was going to learn C++ to do this. Well, I guess there isn't a point to that now is there. I can retain my ignorance of memory management :) enjoy!*
 
@@ -20,7 +20,7 @@ projectM visuals can include high-contrast, rapidly changing patterns and flashe
 
 ***LIKE SERIOUSLY: If you use this you will be essentially swimming in flashing patterns.***
 
-## What is in this fork
+## What is in this repo
 
 - Meta Quest OpenXR `NativeActivity` app (`apps/quest-openxr-android`)
 - Full-sphere and front-dome projection modes
@@ -187,33 +187,15 @@ adb logcat -s projectM-QuestXR
 - If Gradle fails with SDK path errors, set `OPENXR_SDK`/`openxr.sdk` and `PROJECTM4_SDK`/`projectm4.sdk` as shown above.
 - For release packaging, Gradle copies `libprojectM-4.so` from `PROJECTM4_SDK` into generated JNI libs so the APK stays portable.
 
-## Building libprojectM (non-Quest)
-
-This fork still contains the full upstream `libprojectM` build system.
-
-- Quick start: `BUILDING.md`
-- Detailed CMake options: `BUILDING-cmake.md`
-
 ## Upstream and licensing
 
 - Upstream project: [projectM-visualizer/projectm](https://github.com/projectM-visualizer/projectm)
 - Main license text: `LICENSE.txt`
 - Historical licensing notes: `COPYING`
 
-If you use this fork, please link back to upstream projectM and credit the original maintainers.
-
-## Syncing with upstream
-
-Use this flow to pull updates from `projectM-visualizer/projectm` into this repo:
-
-```bash
-git fetch upstream
-git checkout master
-git merge --ff-only upstream/master
-git push origin master
-```
+If you use this project, please link back to upstream projectM and credit the original maintainers.
 
 ## More docs
 
 - Quest app integration notes: `apps/quest-openxr-android/README.md`
-- Core library build docs: `BUILDING.md`, `BUILDING-cmake.md`
+- projectM integration policy: `docs/PROJECTM-INTEGRATION.md`
