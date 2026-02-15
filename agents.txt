@@ -1,0 +1,27 @@
+2026-02-12T03:29:34-08:00 | Prepare action log file
+2026-02-12T03:29:38-08:00 | Check and stop any previous live log capture process
+2026-02-12T03:29:46-08:00 | Clear device logcat buffers for clean repro capture
+2026-02-12T03:29:52-08:00 | Start background adb logcat capture to /tmp for next repro
+2026-02-12T03:30:00-08:00 | Verify background log capture process is running
+2026-02-12T03:30:07-08:00 | Check whether capture process exited unexpectedly
+2026-02-12T03:30:20-08:00 | Search for active adb logcat process in system process list
+2026-02-12T03:30:35-08:00 | Create local logs directory and record target live log file path
+2026-02-12T03:30:41-08:00 | Clear logcat buffers again before persistent live capture
+2026-02-12T03:30:47-08:00 | Start persistent live adb logcat capture session writing to logs/quest-live-current.log
+2026-02-12T03:31:00-08:00 | Record live capture session id and file path for recovery
+2026-02-12T03:31:14-08:00 | session_id=88186 log_file=logs/quest-live-current.log
+2026-02-12T03:32:43-08:00 | Stop live adb capture after user repro complete
+2026-02-12T03:32:54-08:00 | Filter captured live log for projectM, YouTube, and crash/kill signals
+2026-02-12T03:33:10-08:00 | Check captured log for explicit kill/crash/destroy markers during repro window
+2026-02-12T03:33:21-08:00 | Query current device uptime and process exit history after repro
+2026-02-12T03:33:35-08:00 | Check whether projectM and YouTube processes are still running after repro
+2026-02-12T03:33:43-08:00 | Extract projectM-QuestXR tagged native logs from captured file
+2026-02-12T03:33:49-08:00 | Extract QuestNativeActivity lifecycle entries from captured file
+2026-02-12T03:34:02-08:00 | Verify agents.txt captured action breadcrumbs for this investigation
+2026-02-12T03:34:09-08:00 | Save concise repro summary slice for crash-recovery context
+2026-02-12T03:35:57-08:00 | Prepare end-of-day handoff notes
+2026-02-12T03:36:04-08:00 | Append end-of-day handoff summary to agents.md
+2026-02-12T03:36:11-08:00 | Verify handoff note appended to agents.md
+2026-02-12T13:11:51-08:00 | Patched Quest OpenXR input bindings (Meta Touch Plus + trigger value) and HUD auto-hide/placement; pending on-device validation
+2026-02-12T14:55:35-08:00 | Patched Quest HUD: reduced/lowered panel + safer mask to address clipping; added INPUT feedback line and stronger button flash cues
+2026-02-12T15:27:34-08:00 | Logged session handoff: committed HUD usability/layout fixes (2f4085b18, be17ec469), validated on Quest 3, ready for next-session note-driven polish
