@@ -7,6 +7,14 @@ This Android Studio project packages an experimental Quest-compatible `NativeAct
 - maps that texture onto the inside of a sphere for full-surround visuals,
 - supports a front-dome projection mode.
 
+## projectM Integration
+
+- This app links against the upstream `libprojectM-4` shared library and uses the official C API.
+- projectM source code is not vendored or forked in this app module.
+- Release builds bundle the unmodified shared library for portability.
+
+Details: `../../docs/PROJECTM-INTEGRATION.md`
+
 ## Status
 
 This is an integration prototype, not a production-ready headset app yet.
@@ -26,7 +34,8 @@ This is an integration prototype, not a production-ready headset app yet.
 
 1. Android Studio with SDK Platform 34 and NDK installed.
 2. OpenXR SDK for Android (Khronos) installed with CMake package files available, and `OPENXR_SDK` exported in your shell.
-3. A Quest headset in developer mode.
+3. projectM 4 SDK/install prefix for Android arm64 with headers and shared library (`PROJECTM4_SDK`).
+4. A Quest headset in developer mode.
 
 ## Build
 
@@ -35,11 +44,17 @@ This is an integration prototype, not a production-ready headset app yet.
 
 ```bash
 export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+export PROJECTM4_SDK=/path/to/projectm4/install-prefix
 ```
 
 3. Build and run the `app` module on the headset.
 
-The Gradle project invokes the root CMake build and enables `-DENABLE_QUEST_VR_APP=ON`.
+Alternatively, set both values in `apps/quest-openxr-android/local.properties`:
+
+```properties
+openxr.sdk=/path/to/openxr-sdk-install-prefix
+projectm4.sdk=/path/to/projectm4/install-prefix
+```
 
 ## Release Build + Signing
 
@@ -48,6 +63,7 @@ Use the repository helper script for consistent Java/Gradle environment:
 ```bash
 cd /home/here/Documents/swirl
 export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+export PROJECTM4_SDK=/path/to/projectm4/install-prefix
 ./scripts/release-build.sh :app:assembleRelease
 ```
 
@@ -62,11 +78,11 @@ export QUESTXR_RELEASE_KEY_PASSWORD='your-key-password'
 
 When all four variables are set, `:app:assembleRelease` produces a signed APK:
 
-- `apps/quest-openxr-android/app/build/outputs/apk/release/app-release.apk`
+- `apps/quest-openxr-android/app/build/outputs/apk/release/projectm-questxr-android-arm64-release.apk`
 
 When signing values are missing, release output is unsigned:
 
-- `apps/quest-openxr-android/app/build/outputs/apk/release/app-release-unsigned.apk`
+- `apps/quest-openxr-android/app/build/outputs/apk/release/projectm-questxr-android-arm64-release-unsigned.apk`
 
 The script also writes a checksum file next to the artifact (`.sha256`).
 
@@ -95,8 +111,8 @@ Optional explicit title/notes:
 
 Behavior:
 
-- Prefers signed APK (`app-release.apk`) when present.
-- Falls back to unsigned APK (`app-release-unsigned.apk`).
+- Prefers signed APK (`projectm-questxr-android-arm64-release.apk`) when present.
+- Falls back to unsigned APK (`projectm-questxr-android-arm64-release-unsigned.apk`).
 - Uses existing `.sha256` if present, otherwise generates one.
 - Creates the release if tag does not exist; otherwise uploads/replaces assets on the existing release.
 

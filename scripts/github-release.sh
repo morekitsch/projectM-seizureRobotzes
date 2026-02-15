@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RELEASE_DIR="$ROOT_DIR/apps/quest-openxr-android/app/build/outputs/apk/release"
+NAMED_SIGNED_APK="$RELEASE_DIR/projectm-questxr-android-arm64-release.apk"
+NAMED_UNSIGNED_APK="$RELEASE_DIR/projectm-questxr-android-arm64-release-unsigned.apk"
 SIGNED_APK="$RELEASE_DIR/app-release.apk"
 UNSIGNED_APK="$RELEASE_DIR/app-release-unsigned.apk"
 
@@ -91,7 +93,11 @@ resolve_repo() {
 
 REPO="$(resolve_repo)"
 
-if [[ -f "$SIGNED_APK" ]]; then
+if [[ -f "$NAMED_SIGNED_APK" ]]; then
+  APK="$NAMED_SIGNED_APK"
+elif [[ -f "$NAMED_UNSIGNED_APK" ]]; then
+  APK="$NAMED_UNSIGNED_APK"
+elif [[ -f "$SIGNED_APK" ]]; then
   APK="$SIGNED_APK"
 elif [[ -f "$UNSIGNED_APK" ]]; then
   APK="$UNSIGNED_APK"

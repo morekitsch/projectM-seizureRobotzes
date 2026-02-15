@@ -53,17 +53,24 @@ TASK="${1:-:app:assembleRelease}"
 
 SIGNED_APK="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
 UNSIGNED_APK="$ANDROID_DIR/app/build/outputs/apk/release/app-release-unsigned.apk"
+NAMED_SIGNED_APK="$ANDROID_DIR/app/build/outputs/apk/release/projectm-questxr-android-arm64-release.apk"
+NAMED_UNSIGNED_APK="$ANDROID_DIR/app/build/outputs/apk/release/projectm-questxr-android-arm64-release-unsigned.apk"
 
 if [[ -f "$SIGNED_APK" ]]; then
   ARTIFACT="$SIGNED_APK"
+  NAMED_ARTIFACT="$NAMED_SIGNED_APK"
 elif [[ -f "$UNSIGNED_APK" ]]; then
   ARTIFACT="$UNSIGNED_APK"
+  NAMED_ARTIFACT="$NAMED_UNSIGNED_APK"
 else
   echo "ERROR: Release APK not found under app/build/outputs/apk/release" >&2
   exit 1
 fi
 
-echo "Release artifact: $ARTIFACT"
-sha256sum "$ARTIFACT" | tee "$ARTIFACT.sha256"
+cp -f "$ARTIFACT" "$NAMED_ARTIFACT"
+sha256sum "$NAMED_ARTIFACT" | tee "$NAMED_ARTIFACT.sha256"
+
+echo "Release artifact: $NAMED_ARTIFACT"
+echo "Original AGP output: $ARTIFACT"
 
 echo "Done."

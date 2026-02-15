@@ -6,6 +6,14 @@ This repo keeps the upstream `libprojectM` codebase and adds an experimental Que
 
 *Status: It works for my needs. it's a vibecoded app. Not sure how long i'll need mention that before it's vibecoding is asumed for all things, but hey ChatGPT5.3-high codex originally wrote all the stuff. I mostly complained about choices and tested. I was going to learn C++ to do this. Well, I guess there isn't a point to that now is there. I can retain my ignorance of memory management :) enjoy!*
 
+## projectM Integration
+
+- This app links against the upstream `libprojectM-4` shared library and uses the official C API.
+- The Quest app module does not vendor/fork projectM source; it consumes an external `libprojectM-4` install.
+- Releases bundle the shared library for portability, but the library is unmodified.
+
+Details: `docs/PROJECTM-INTEGRATION.md`
+
 ## Photosensitivity warning
 
 projectM visuals can include high-contrast, rapidly changing patterns and flashes. If you are sensitive to flashing lights, use caution and stop immediately if you feel unwell. 
@@ -35,22 +43,30 @@ projectM visuals can include high-contrast, rapidly changing patterns and flashe
 - Android Studio with Android SDK Platform 34
 - Android NDK installed (this project is currently configured and tested with NDK 27.x)
 - OpenXR SDK for Android installed locally
+- projectM 4 SDK/install prefix for Android arm64 with headers and shared library
 - Quest headset in developer mode
 - `adb` available on your host machine
 
-### 2. Configure OpenXR SDK path
+### 2. Configure SDK paths
 
 Use one of the following:
 
 ```bash
 export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+export PROJECTM4_SDK=/path/to/projectm4/install-prefix
 ```
 
 Or set `apps/quest-openxr-android/local.properties`:
 
 ```properties
 openxr.sdk=/path/to/openxr-sdk-install-prefix
+projectm4.sdk=/path/to/projectm4/install-prefix
 ```
+
+`PROJECTM4_SDK` must point to a projectM 4 install prefix containing:
+
+- `include/projectM-4/projectM.h`
+- `lib/libprojectM-4.so` (or `lib/arm64-v8a/libprojectM-4.so`)
 
 ### 3. Build + install debug APK
 
@@ -58,6 +74,9 @@ openxr.sdk=/path/to/openxr-sdk-install-prefix
 cd apps/quest-openxr-android
 ./gradlew :app:installDebug
 ```
+
+The Android app module now builds native code from `apps/quest-openxr-android/app/src/main/cpp/CMakeLists.txt`
+and links against the external `libprojectM-4` from `PROJECTM4_SDK`.
 
 ### 4. Launch on headset
 
@@ -165,7 +184,8 @@ adb logcat -s projectM-QuestXR
 ./scripts/quest_logcat_capture.sh stop
 ```
 
-- If Gradle fails with OpenXR path errors, set `OPENXR_SDK` or `openxr.sdk` as shown above.
+- If Gradle fails with SDK path errors, set `OPENXR_SDK`/`openxr.sdk` and `PROJECTM4_SDK`/`projectm4.sdk` as shown above.
+- For release packaging, Gradle copies `libprojectM-4.so` from `PROJECTM4_SDK` into generated JNI libs so the APK stays portable.
 
 ## Building libprojectM (non-Quest)
 

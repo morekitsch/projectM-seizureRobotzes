@@ -35,6 +35,25 @@ def resolveOpenxrSdkPath() {
     return null
 }
 
+def resolveProjectm4SdkPath() {
+    def propsFile = rootProject.file('local.properties')
+    if (propsFile.exists()) {
+        def props = new Properties()
+        propsFile.withInputStream { props.load(it) }
+        def fromLocal = props.getProperty('projectm4.sdk')
+        if (fromLocal != null && !fromLocal.trim().isEmpty()) {
+            return fromLocal.trim()
+        }
+    }
+
+    def fromEnv = System.getenv('PROJECTM4_SDK')
+    if (fromEnv != null && !fromEnv.trim().isEmpty()) {
+        return fromEnv.trim()
+    }
+
+    return null
+}
+
 def shouldRequireOpenxrSdkPath() {
     if (gradle.startParameter.taskNames.isEmpty()) {
         return false
@@ -50,9 +69,11 @@ def shouldRequireOpenxrSdkPath() {
 }
 
 def openxrSdkPath = resolveOpenxrSdkPath()
-def configureNativeBuild = openxrSdkPath != null
+def projectm4SdkPath = resolveProjectm4SdkPath()
 def missingOpenxrPathMessage = "OpenXR SDK path not configured. Set OPENXR_SDK in the environment or set " +
         "'openxr.sdk=/path/to/openxr/cmake/prefix' in apps/quest-openxr-android/local.properties."
+def missingProjectm4PathMessage = "projectM 4 SDK path not configured. Set PROJECTM4_SDK in the environment or set " +
+        "'projectm4.sdk=/path/to/projectm4/install-prefix' in apps/quest-openxr-android/local.properties."
 def releaseStoreFile = resolveSigningValue('QUESTXR_RELEASE_STORE_FILE')
 def releaseStorePassword = resolveSigningValue('QUESTXR_RELEASE_STORE_PASSWORD')
 def releaseKeyAlias = resolveSigningValue('QUESTXR_RELEASE_KEY_ALIAS')
@@ -69,6 +90,48 @@ if (openxrSdkPath == null) {
 
     logger.lifecycle("OpenXR SDK path not configured; Gradle sync can continue, but native build tasks will fail. " +
             "Set OPENXR_SDK or openxr.sdk in local.properties before building.")
+}
+
+if (projectm4SdkPath == null) {
+    if (shouldRequireOpenxrSdkPath()) {
+        throw new GradleException(missingProjectm4PathMessage)
+    }
+
+    logger.lifecycle("projectM 4 SDK path not configured; Gradle sync can continue, but native build tasks will fail. " +
+            "Set PROJECTM4_SDK or projectm4.sdk in local.properties before building.")
+}
+
+def configureNativeBuild = openxrSdkPath != null && projectm4SdkPath != null
+def projectm4LibSearchPaths = projectm4SdkPath == null ? [] : [
+        "${projectm4SdkPath}/lib/arm64-v8a/libprojectM-4.so",
+        "${projectm4SdkPath}/lib/libprojectM-4.so",
+        "${projectm4SdkPath}/lib64/libprojectM-4.so",
+        "${projectm4SdkPath}/lib/arm64-v8a/libprojectM-4.so.4",
+        "${projectm4SdkPath}/lib/libprojectM-4.so.4",
+        "${projectm4SdkPath}/lib64/libprojectM-4.so.4"
+]
+def resolvedProjectm4Lib = projectm4LibSearchPaths.find { new File(it).exists() }
+def projectm4JniRoot = file("$buildDir/generated/projectm4-jni")
+def jniLibDir = new File(projectm4JniRoot, 'arm64-v8a')
+
+tasks.register('prepareProjectm4SharedLib') {
+    onlyIf { configureNativeBuild }
+    doLast {
+        if (resolvedProjectm4Lib == null) {
+            throw new GradleException("Could not find libprojectM-4.so in PROJECTM4_SDK (${projectm4SdkPath}). " +
+                    "Expected one of: ${projectm4LibSearchPaths.join(', ')}")
+        }
+
+        if (!jniLibDir.exists() && !jniLibDir.mkdirs()) {
+            throw new GradleException("Failed to create JNI lib directory: ${jniLibDir}")
+        }
+
+        copy {
+            from resolvedProjectm4Lib
+            into jniLibDir
+            rename { String _ -> 'libprojectM-4.so' }
+        }
+    }
 }
 
 android {
@@ -90,13 +153,10 @@ android {
             externalNativeBuild {
                 cmake {
                     arguments '-DANDROID_STL=c++_shared',
-                              '-DENABLE_QUEST_VR_APP=ON',
-                              '-DENABLE_SDL_UI=OFF',
-                              '-DBUILD_TESTING=OFF',
-                              '-DENABLE_SYSTEM_PROJECTM_EVAL=OFF',
                               "-DOPENXR_SDK=${openxrSdkPath}",
-                              "-DCMAKE_PREFIX_PATH=${openxrSdkPath}"
-                    cppFlags '-std=c++14'
+                              "-DPROJECTM4_SDK=${projectm4SdkPath}",
+                              "-DCMAKE_PREFIX_PATH=${openxrSdkPath};${projectm4SdkPath}"
+                    cppFlags '-std=c++17'
                     targets 'projectm_quest_openxr'
                 }
             }
@@ -132,9 +192,15 @@ android {
     if (configureNativeBuild) {
         externalNativeBuild {
             cmake {
-                path file('../../../CMakeLists.txt')
+                path file('src/main/cpp/CMakeLists.txt')
                 version '3.22.1'
             }
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDir projectm4JniRoot
         }
     }
 
@@ -153,4 +219,8 @@ if (releaseSigningEnabled) {
     logger.lifecycle("Release signing is configured from QUESTXR_RELEASE_* settings.")
 } else {
     logger.lifecycle("Release signing is not configured. Release builds will be unsigned.")
+}
+
+tasks.matching { it.name in ['preBuild', 'mergeDebugNativeLibs', 'mergeReleaseNativeLibs'] }.configureEach {
+    dependsOn tasks.named('prepareProjectm4SharedLib')
 }
