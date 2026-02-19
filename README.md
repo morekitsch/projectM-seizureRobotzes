@@ -68,6 +68,16 @@ projectm4.sdk=/path/to/projectm4/install-prefix
 - `include/projectM-4/projectM.h`
 - `lib/libprojectM-4.so` (or `lib/arm64-v8a/libprojectM-4.so`)
 
+If you only have projectM sources and need to build the Android-compatible SDK prefix first:
+
+```bash
+cd /home/here/Documents/swirl/projectm
+git submodule update --init --recursive
+cd /home/here/Documents/swirl
+./scripts/build-projectm-android-sdk.sh
+export PROJECTM4_SDK=/home/here/Documents/swirl/projectm-android-sdk
+```
+
 ### 3. Build + install debug APK
 
 ```bash
@@ -186,6 +196,34 @@ adb logcat -s projectM-QuestXR
 
 - If Gradle fails with SDK path errors, set `OPENXR_SDK`/`openxr.sdk` and `PROJECTM4_SDK`/`projectm4.sdk` as shown above.
 - For release packaging, Gradle copies `libprojectM-4.so` from `PROJECTM4_SDK` into generated JNI libs so the APK stays portable.
+
+## Release flow (signed + GitHub assets)
+
+Build signed release APK:
+
+```bash
+cd /home/here/Documents/swirl
+export OPENXR_SDK=/path/to/openxr-sdk-install-prefix
+export PROJECTM4_SDK=/home/here/Documents/swirl/projectm-android-sdk
+export QUESTXR_RELEASE_STORE_FILE="$HOME/.android/release.keystore"
+export QUESTXR_RELEASE_STORE_PASSWORD='your-store-password'
+export QUESTXR_RELEASE_KEY_ALIAS='your-key-alias'
+export QUESTXR_RELEASE_KEY_PASSWORD='your-key-password'
+./scripts/release-build.sh :app:assembleRelease
+```
+
+Publish or update GitHub release assets (APK + checksum):
+
+```bash
+gh auth login -h github.com
+./scripts/github-release.sh v1.0.0
+```
+
+One-step build + publish helper:
+
+```bash
+./scripts/release-and-publish.sh v1.0.0
+```
 
 ## Upstream and licensing
 

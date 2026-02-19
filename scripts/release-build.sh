@@ -3,6 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_DIR="$ROOT_DIR/apps/quest-openxr-android"
+DEFAULT_KEYSTORE_FILE="${HOME}/.android/release.keystore"
+
+if [[ -z "${QUESTXR_RELEASE_STORE_FILE:-}" && -f "$DEFAULT_KEYSTORE_FILE" ]]; then
+  export QUESTXR_RELEASE_STORE_FILE="$DEFAULT_KEYSTORE_FILE"
+  echo "Using default release keystore at $QUESTXR_RELEASE_STORE_FILE"
+fi
 
 usage() {
   cat <<'EOU'

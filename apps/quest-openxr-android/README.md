@@ -58,6 +58,17 @@ projectm4.sdk=/path/to/projectm4/install-prefix
 
 ## Release Build + Signing
 
+If you cloned `projectM` source into this repo at `./projectm`, build an Android-compatible SDK prefix first:
+
+```bash
+cd /home/here/Documents/swirl
+cd projectm && git submodule update --init --recursive && cd ..
+./scripts/build-projectm-android-sdk.sh
+export PROJECTM4_SDK=/home/here/Documents/swirl/projectm-android-sdk
+```
+
+`git submodule update --init --recursive` is required because `vendor/projectm-eval` is a projectM submodule used by CMake.
+
 Use the repository helper script for consistent Java/Gradle environment:
 
 ```bash
@@ -67,10 +78,10 @@ export PROJECTM4_SDK=/path/to/projectm4/install-prefix
 ./scripts/release-build.sh :app:assembleRelease
 ```
 
-Release signing is optional and driven by environment variables (or Gradle properties with the same names):
+Release signing is optional and driven by environment variables (or Gradle properties with the same names). If you keep the keystore at `~/.android/release.keystore`, the helper script auto-sets `QUESTXR_RELEASE_STORE_FILE` when you run it from the workspace; set that variable yourself only if the keystore lives somewhere else or you need to override it.
 
 ```bash
-export QUESTXR_RELEASE_STORE_FILE=/absolute/path/to/release-keystore.jks
+export QUESTXR_RELEASE_STORE_FILE=/absolute/path/to/release-keystore.jks  # optional when ~/.android/release.keystore exists
 export QUESTXR_RELEASE_STORE_PASSWORD='your-store-password'
 export QUESTXR_RELEASE_KEY_ALIAS='your-key-alias'
 export QUESTXR_RELEASE_KEY_PASSWORD='your-key-password'
@@ -115,6 +126,7 @@ Behavior:
 - Falls back to unsigned APK (`projectm-questxr-android-arm64-release-unsigned.apk`).
 - Uses existing `.sha256` if present, otherwise generates one.
 - Creates the release if tag does not exist; otherwise uploads/replaces assets on the existing release.
+- Requires a valid `gh` login (`gh auth login -h github.com`).
 
 ## Projection Modes
 
