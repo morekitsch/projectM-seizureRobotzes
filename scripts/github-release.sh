@@ -38,7 +38,8 @@ if [[ -z "$TAG" ]]; then
 fi
 
 if [[ -z "$TITLE" ]]; then
-  TITLE="QuestXR $TAG"
+  # Default release title follows the existing tag-based convention.
+  TITLE="$TAG"
 fi
 
 if ! command -v gh >/dev/null 2>&1; then
